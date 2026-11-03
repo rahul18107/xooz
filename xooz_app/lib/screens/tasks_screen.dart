@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class TasksScreen extends StatelessWidget {
@@ -15,12 +16,15 @@ class TasksScreen extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(32),
               ),
               child: const Icon(
                 Icons.check_circle_outline,
-                color: Color(0xFFC8B89A),
+                color: AppColors.accent,
                 size: 28,
               ),
             ),
@@ -28,9 +32,10 @@ class TasksScreen extends StatelessWidget {
             const Text(
               'Tasks',
               style: TextStyle(
-                fontFamily: 'DMSerifDisplay',
+                fontFamily: 'Inter',
                 fontSize: 24,
-                color: Color(0xFFE8DFD0),
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
               ),
             ),
             const SizedBox(height: 10),
@@ -39,7 +44,7 @@ class TasksScreen extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 14,
-                color: Color(0xFF6B6460),
+                color: AppColors.muted,
                 height: 1.5,
               ),
               textAlign: TextAlign.center,

@@ -1,4 +1,6 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/transcript.dart';
 import '../models/digest.dart';
 import '../services/api_service.dart';
@@ -25,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Digest? _digest;
-  List<Transcript> _transcripts = [];
+  final List<Transcript> _transcripts = [];
   bool _loading = true;
 
   @override
@@ -40,11 +42,13 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() => _loading = true);
     try {
       final digest = await ApiService.getDigest();
+      if (!mounted) return;
       setState(() {
         _digest = digest;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }
@@ -57,35 +61,39 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildTopBar(),
-            _buildTabBar(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildHomeTab(),
-                  const TasksScreen(),
-                ],
-              ),
-            ),
-            BottomBar(
-              onRecordTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const RecordingScreen(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: AppColors.homeBackground,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: AppColors.homeBackground,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(),
+              _buildTabBar(),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [_buildHomeTab(), const TasksScreen()],
                 ),
-              ).then((_) => _loadData()),
-              onAskAnythingTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ChatScreen()),
               ),
-            ),
-          ],
+              BottomBar(
+                onRecordTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RecordingScreen()),
+                ).then((_) => _loadData()),
+                onAskAnythingTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ChatScreen()),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -93,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildTopBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
       child: Row(
         children: [
           GestureDetector(
@@ -102,21 +110,22 @@ class _HomeScreenState extends State<HomeScreen>
               MaterialPageRoute(builder: (_) => const ConnectScreen()),
             ),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
-                borderRadius: BorderRadius.circular(20),
+                color: AppColors.homeCard,
+                borderRadius: BorderRadius.circular(28),
               ),
               child: Row(
                 children: const [
-                  Icon(Icons.device_hub, color: Color(0xFF6B6460), size: 14),
+                  Icon(Icons.hub_outlined, color: AppColors.homeInk, size: 14),
                   SizedBox(width: 6),
                   Text(
                     'Connect',
                     style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 13,
-                      color: Color(0xFF6B6460),
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.homeInk,
                     ),
                   ),
                 ],
@@ -125,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const Spacer(),
           _topIcon(
-            Icons.calendar_today,
+            Icons.calendar_today_outlined,
             () => showModalBottomSheet(
               context: context,
               backgroundColor: Colors.transparent,
@@ -151,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const SizedBox(width: 8),
           _topIcon(
-            Icons.settings,
+            Icons.settings_outlined,
             () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -166,50 +175,47 @@ class _HomeScreenState extends State<HomeScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1512),
+          color: AppColors.homeCard,
           borderRadius: BorderRadius.circular(19),
         ),
-        child: Icon(icon, color: const Color(0xFF6B6460), size: 18),
+        child: Icon(
+          icon,
+          color: AppColors.homeInk,
+          size: 21,
+        ),
       ),
     );
   }
 
   Widget _buildTabBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => _tabController.animateTo(0),
-            child: Text(
-              'Home',
-              style: TextStyle(
-                fontFamily: 'DMSerifDisplay',
-                fontSize: 28,
-                color: _tabController.index == 0
-                    ? const Color(0xFFE8DFD0)
-                    : const Color(0xFF3A3530),
-              ),
-            ),
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
+        child: TabBar(
+          controller: _tabController,
+          overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          splashFactory: NoSplash.splashFactory,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          dividerColor: Colors.transparent,
+          indicator: const BoxDecoration(),
+          labelPadding: const EdgeInsets.only(right: 20),
+          labelColor: AppColors.homeInk,
+          unselectedLabelColor: AppColors.homeMuted,
+          labelStyle: const TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 30,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(width: 16),
-          GestureDetector(
-            onTap: () => _tabController.animateTo(1),
-            child: Text(
-              'Tasks',
-              style: TextStyle(
-                fontFamily: 'DMSerifDisplay',
-                fontSize: 28,
-                color: _tabController.index == 1
-                    ? const Color(0xFFE8DFD0)
-                    : const Color(0xFF3A3530),
-              ),
-            ),
-          ),
-        ],
+          tabs: const [
+            Tab(text: 'Home'),
+            Tab(text: 'Tasks'),
+          ],
+        ),
       ),
     );
   }
@@ -217,12 +223,12 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildHomeTab() {
     return RefreshIndicator(
       onRefresh: _loadData,
-      color: const Color(0xFFC8B89A),
-      backgroundColor: const Color(0xFF1A1512),
+      color: AppColors.homeAccent,
+      backgroundColor: AppColors.homeCard,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         children: [
-          const SizedBox(height: 20),
+          const SizedBox(height: 4),
           _buildDailyRecapsSection(),
           const SizedBox(height: 28),
           _buildTodaySection(),
@@ -242,9 +248,9 @@ class _HomeScreenState extends State<HomeScreen>
               'Daily Recaps',
               style: TextStyle(
                 fontFamily: 'Inter',
-                fontSize: 16,
+                fontSize: 20,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFFE8DFD0),
+                color: AppColors.homeInk,
               ),
             ),
             GestureDetector(
@@ -254,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 13,
-                  color: Color(0xFF6B6460),
+                  color: AppColors.homeMuted,
                 ),
               ),
             ),
@@ -263,13 +269,11 @@ class _HomeScreenState extends State<HomeScreen>
         const SizedBox(height: 14),
         _loading
             ? const Center(
-                child: CircularProgressIndicator(
-                  color: Color(0xFFC8B89A),
-                ),
+                child: CircularProgressIndicator(color: AppColors.homeAccent),
               )
             : _digest == null
-                ? _emptyRecapCard()
-                : DigestCard(digest: _digest!),
+            ? _emptyRecapCard()
+            : DigestCard(digest: _digest!),
       ],
     );
   }
@@ -279,15 +283,16 @@ class _HomeScreenState extends State<HomeScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1512),
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.homeCard,
+        borderRadius: BorderRadius.circular(28),
       ),
       child: const Text(
         'No recap yet.\nRecord your first conversation.',
         style: TextStyle(
           fontFamily: 'Inter',
           fontSize: 14,
-          color: Color(0xFF6B6460),
+          fontWeight: FontWeight.bold,
+          color: AppColors.homeMuted,
           height: 1.5,
         ),
       ),
@@ -302,9 +307,9 @@ class _HomeScreenState extends State<HomeScreen>
           'Today',
           style: TextStyle(
             fontFamily: 'Inter',
-            fontSize: 16,
+            fontSize: 20,
             fontWeight: FontWeight.w600,
-            color: Color(0xFFE8DFD0),
+            color: AppColors.homeInk,
           ),
         ),
         const SizedBox(height: 14),
@@ -312,15 +317,16 @@ class _HomeScreenState extends State<HomeScreen>
             ? Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1512),
-                  borderRadius: BorderRadius.circular(16),
+                  color: AppColors.homeCard,
+                  borderRadius: BorderRadius.circular(28),
                 ),
                 child: const Text(
                   'No recordings today yet.',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 14,
-                    color: Color(0xFF6B6460),
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.homeMuted,
                   ),
                 ),
               )

@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -6,7 +7,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -23,17 +24,17 @@ class SettingsScreen extends StatelessWidget {
                       icon: Icons.workspace_premium_outlined,
                       title: 'Upgrade',
                       subtitle: 'Start your 7-day free trial',
-                      iconColor: const Color(0xFFC8B89A),
+                      iconColor: AppColors.accent,
                     ),
                     _SettingsItem(
                       icon: Icons.bar_chart_outlined,
                       title: 'Plan & Usage',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.card_giftcard_outlined,
                       title: 'Referral Program',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                       badge: 'NEW',
                     ),
                   ]),
@@ -42,39 +43,39 @@ class SettingsScreen extends StatelessWidget {
                     _SettingsItem(
                       icon: Icons.bluetooth_outlined,
                       title: 'Device',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.mic_outlined,
                       title: 'Recording & Transcription',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.volume_up_outlined,
                       title: 'Voice',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.notifications_outlined,
                       title: 'Notifications & Display',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.account_tree_outlined,
                       title: 'Integrations',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                       badge: 'BETA',
-                      badgeColor: const Color(0xFFC8B89A),
+                      badgeColor: AppColors.accent,
                     ),
                     _SettingsItem(
                       icon: Icons.terminal_outlined,
                       title: 'Connect an Agent',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
                       icon: Icons.shield_outlined,
                       title: 'Data & Privacy',
-                      iconColor: const Color(0xFFE8DFD0),
+                      iconColor: AppColors.ink,
                     ),
                   ]),
                   const SizedBox(height: 32),
@@ -98,23 +99,23 @@ class SettingsScreen extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(19),
               ),
-              child: const Icon(
-                Icons.close,
-                color: Color(0xFF6B6460),
-                size: 18,
-              ),
+              child: const Icon(Icons.close, color: AppColors.muted, size: 18),
             ),
           ),
           const Spacer(),
           const Text(
             'Settings',
             style: TextStyle(
-              fontFamily: 'DMSerifDisplay',
+              fontFamily: 'Inter',
               fontSize: 22,
-              color: Color(0xFFE8DFD0),
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
             ),
           ),
           const Spacer(),
@@ -122,14 +123,13 @@ class SettingsScreen extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1512),
+              color: AppColors.surface,
+              border: const Border.fromBorderSide(
+                BorderSide(color: AppColors.homeBorder),
+              ),
               borderRadius: BorderRadius.circular(19),
             ),
-            child: const Icon(
-              Icons.search,
-              color: Color(0xFF6B6460),
-              size: 18,
-            ),
+            child: const Icon(Icons.search, color: AppColors.muted, size: 18),
           ),
         ],
       ),
@@ -140,8 +140,11 @@ class SettingsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1512),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface,
+        border: const Border.fromBorderSide(
+          BorderSide(color: AppColors.homeBorder),
+        ),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: Row(
         children: [
@@ -149,12 +152,12 @@ class SettingsScreen extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFF252018),
+              color: AppColors.raised,
               borderRadius: BorderRadius.circular(22),
             ),
             child: const Icon(
               Icons.person_outline,
-              color: Color(0xFFC8B89A),
+              color: AppColors.ink,
               size: 22,
             ),
           ),
@@ -169,7 +172,7 @@ class SettingsScreen extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFFE8DFD0),
+                    color: AppColors.ink,
                   ),
                 ),
                 SizedBox(height: 2),
@@ -178,17 +181,13 @@ class SettingsScreen extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
-                    color: Color(0xFF6B6460),
+                    color: AppColors.cardMuted,
                   ),
                 ),
               ],
             ),
           ),
-          const Icon(
-            Icons.chevron_right,
-            color: Color(0xFF6B6460),
-            size: 18,
-          ),
+          const Icon(Icons.chevron_right, color: AppColors.cardMuted, size: 18),
         ],
       ),
     );
@@ -197,8 +196,11 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildSection(List<_SettingsItem> items) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1512),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface,
+        border: const Border.fromBorderSide(
+          BorderSide(color: AppColors.homeBorder),
+        ),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: Column(
         children: items.asMap().entries.map((entry) {
@@ -209,11 +211,7 @@ class SettingsScreen extends StatelessWidget {
             children: [
               _buildSettingsRow(item),
               if (!isLast)
-                const Divider(
-                  height: 1,
-                  color: Color(0xFF252018),
-                  indent: 56,
-                ),
+                const Divider(height: 1, color: AppColors.raised, indent: 56),
             ],
           );
         }).toList(),
@@ -232,14 +230,10 @@ class SettingsScreen extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: const Color(0xFF252018),
-                borderRadius: BorderRadius.circular(8),
+                color: AppColors.raised,
+                borderRadius: BorderRadius.circular(20),
               ),
-              child: Icon(
-                item.icon,
-                color: item.iconColor,
-                size: 16,
-              ),
+              child: Icon(item.icon, color: item.iconColor, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -252,7 +246,7 @@ class SettingsScreen extends StatelessWidget {
                       fontFamily: 'Inter',
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFFE8DFD0),
+                      color: AppColors.ink,
                     ),
                   ),
                   if (item.subtitle != null)
@@ -261,7 +255,7 @@ class SettingsScreen extends StatelessWidget {
                       style: const TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 12,
-                        color: Color(0xFF6B6460),
+                        color: AppColors.cardMuted,
                       ),
                     ),
                 ],
@@ -269,13 +263,11 @@ class SettingsScreen extends StatelessWidget {
             ),
             if (item.badge != null)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: (item.badgeColor ?? const Color(0xFF4CAF50))
-                      .withOpacity(0.15),
+                  color: (item.badgeColor ?? AppColors.accent).withValues(
+                    alpha: 0.15,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -284,14 +276,14 @@ class SettingsScreen extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: item.badgeColor ?? const Color(0xFF4CAF50),
+                    color: item.badgeColor ?? AppColors.accent,
                   ),
                 ),
               ),
             const SizedBox(width: 8),
             const Icon(
               Icons.chevron_right,
-              color: Color(0xFF6B6460),
+              color: AppColors.cardMuted,
               size: 18,
             ),
           ],

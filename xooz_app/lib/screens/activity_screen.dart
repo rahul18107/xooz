@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../models/transcript.dart';
 import '../widgets/transcript_tile.dart';
@@ -8,7 +9,7 @@ class ActivityScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -49,12 +50,15 @@ class ActivityScreen extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(19),
               ),
               child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF6B6460),
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.muted,
                 size: 18,
               ),
             ),
@@ -63,9 +67,10 @@ class ActivityScreen extends StatelessWidget {
           const Text(
             'Activity',
             style: TextStyle(
-              fontFamily: 'DMSerifDisplay',
+              fontFamily: 'Inter',
               fontSize: 22,
-              color: Color(0xFFE8DFD0),
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
             ),
           ),
           const Spacer(),
@@ -89,7 +94,7 @@ class ActivityScreen extends StatelessWidget {
             fontFamily: 'Inter',
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF6B6460),
+            color: AppColors.cardMuted,
             letterSpacing: 0.5,
           ),
         ),
@@ -99,15 +104,18 @@ class ActivityScreen extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1512),
-                  borderRadius: BorderRadius.circular(16),
+                  color: AppColors.surface,
+                  border: const Border.fromBorderSide(
+                    BorderSide(color: AppColors.homeBorder),
+                  ),
+                  borderRadius: BorderRadius.circular(28),
                 ),
                 child: Text(
                   emptyMessage,
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 14,
-                    color: Color(0xFF6B6460),
+                    color: AppColors.cardMuted,
                   ),
                 ),
               )

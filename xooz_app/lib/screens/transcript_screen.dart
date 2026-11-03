@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../models/transcript.dart';
 
@@ -9,7 +10,7 @@ class TranscriptScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -42,12 +43,15 @@ class TranscriptScreen extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(19),
               ),
               child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF6B6460),
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.muted,
                 size: 18,
               ),
             ),
@@ -57,12 +61,15 @@ class TranscriptScreen extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1512),
+              color: AppColors.surface,
+              border: const Border.fromBorderSide(
+                BorderSide(color: AppColors.homeBorder),
+              ),
               borderRadius: BorderRadius.circular(19),
             ),
             child: const Icon(
               Icons.more_horiz,
-              color: Color(0xFF6B6460),
+              color: AppColors.muted,
               size: 18,
             ),
           ),
@@ -81,12 +88,15 @@ class TranscriptScreen extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(
-                Icons.mic,
-                color: Color(0xFFC8B89A),
+                Icons.mic_none_rounded,
+                color: AppColors.accent,
                 size: 20,
               ),
             ),
@@ -99,7 +109,7 @@ class TranscriptScreen extends StatelessWidget {
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
-                    color: Color(0xFF6B6460),
+                    color: AppColors.muted,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -109,7 +119,7 @@ class TranscriptScreen extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFFC8B89A),
+                    color: AppColors.accent,
                   ),
                 ),
               ],
@@ -120,9 +130,10 @@ class TranscriptScreen extends StatelessWidget {
         Text(
           transcript.shortText,
           style: const TextStyle(
-            fontFamily: 'DMSerifDisplay',
+            fontFamily: 'Inter',
             fontSize: 24,
-            color: Color(0xFFE8DFD0),
+            fontWeight: FontWeight.w600,
+            color: AppColors.ink,
             height: 1.3,
           ),
         ),
@@ -141,15 +152,18 @@ class TranscriptScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1512),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface,
+        border: const Border.fromBorderSide(
+          BorderSide(color: AppColors.homeBorder),
+        ),
+        borderRadius: BorderRadius.circular(28),
       ),
       child: Text(
         transcript.text,
         style: const TextStyle(
           fontFamily: 'Inter',
           fontSize: 15,
-          color: Color(0xFFE8DFD0),
+          color: AppColors.ink,
           height: 1.7,
         ),
       ),
@@ -167,10 +181,8 @@ class TranscriptScreen extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             constraints: const BoxConstraints(maxWidth: 280),
             decoration: BoxDecoration(
-              color: isA
-                  ? const Color(0xFF1A1512)
-                  : const Color(0xFF252018),
-              borderRadius: BorderRadius.circular(16),
+              color: isA ? AppColors.surface : AppColors.raised,
+              borderRadius: BorderRadius.circular(28),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,7 +193,7 @@ class TranscriptScreen extends StatelessWidget {
                     fontFamily: 'Inter',
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFFC8B89A),
+                    color: AppColors.accent,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -190,7 +202,7 @@ class TranscriptScreen extends StatelessWidget {
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 14,
-                    color: Color(0xFFE8DFD0),
+                    color: AppColors.ink,
                     height: 1.5,
                   ),
                 ),

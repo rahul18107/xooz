@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class BottomBar extends StatelessWidget {
@@ -12,51 +13,51 @@ class BottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0A0A0A),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
       child: Row(
         children: [
           Expanded(
-            child: GestureDetector(
-              onTap: onAskAnythingTap,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1512),
-                  borderRadius: BorderRadius.circular(30),
+            child: SizedBox(
+              height: 56,
+              child: FilledButton(
+                onPressed: onAskAnythingTap,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.homeCard,
+                  foregroundColor: AppColors.homeInk,
+                  side: const BorderSide(color: AppColors.homeBorder),
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                 ),
                 child: const Text(
                   'Ask anything',
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w400,
-                    color: Color(0xFF6B6460),
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: onRecordTap,
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8DFD0),
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: const Icon(
-                Icons.mic,
-                color: Color(0xFF0A0A0A),
-                size: 24,
+          const SizedBox(width: 14),
+          Semantics(
+            label: 'Start recording',
+            button: true,
+            child: Tooltip(
+              message: 'Start recording',
+              child: InkResponse(
+                onTap: onRecordTap,
+                radius: 30,
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    color: AppColors.homeInk,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.mic_none_rounded,
+                    color: Colors.white,
+                    size: 25,
+                  ),
+                ),
               ),
             ),
           ),

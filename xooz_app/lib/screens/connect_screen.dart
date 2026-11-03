@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'dart:math';
 
@@ -12,7 +13,7 @@ class _ConnectScreenState extends State<ConnectScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _rotationAnimation;
-  bool _isSearching = true;
+  final bool _isSearching = true;
 
   @override
   void initState() {
@@ -21,9 +22,10 @@ class _ConnectScreenState extends State<ConnectScreen>
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat();
-    _rotationAnimation = Tween<double>(begin: 0, end: 2 * pi).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.linear),
-    );
+    _rotationAnimation = Tween<double>(
+      begin: 0,
+      end: 2 * pi,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
   }
 
   @override
@@ -35,7 +37,7 @@ class _ConnectScreenState extends State<ConnectScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -47,13 +49,11 @@ class _ConnectScreenState extends State<ConnectScreen>
                   _buildWatchVisual(),
                   const SizedBox(height: 40),
                   Text(
-                    _isSearching
-                        ? 'Searching for devices'
-                        : 'No devices found',
+                    _isSearching ? 'Searching for devices' : 'No devices found',
                     style: const TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 15,
-                      color: Color(0xFF6B6460),
+                      color: AppColors.muted,
                     ),
                   ),
                 ],
@@ -77,12 +77,15 @@ class _ConnectScreenState extends State<ConnectScreen>
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(19),
               ),
               child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF6B6460),
+                Icons.arrow_back_ios_new_rounded,
+                color: AppColors.muted,
                 size: 18,
               ),
             ),
@@ -91,9 +94,10 @@ class _ConnectScreenState extends State<ConnectScreen>
           const Text(
             'Connect',
             style: TextStyle(
-              fontFamily: 'DMSerifDisplay',
+              fontFamily: 'Inter',
               fontSize: 22,
-              color: Color(0xFFE8DFD0),
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
             ),
           ),
           const Spacer(),
@@ -101,12 +105,15 @@ class _ConnectScreenState extends State<ConnectScreen>
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1512),
+              color: AppColors.surface,
+              border: const Border.fromBorderSide(
+                BorderSide(color: AppColors.homeBorder),
+              ),
               borderRadius: BorderRadius.circular(19),
             ),
             child: const Icon(
               Icons.settings_outlined,
-              color: Color(0xFF6B6460),
+              color: AppColors.muted,
               size: 18,
             ),
           ),
@@ -131,13 +138,13 @@ class _ConnectScreenState extends State<ConnectScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0xFFC8B89A).withOpacity(0.15),
+                    color: AppColors.accent.withValues(alpha: 0.15),
                     width: 1,
                   ),
                 ),
                 child: CustomPaint(
                   painter: _DashedCirclePainter(
-                    color: const Color(0xFFC8B89A).withOpacity(0.4),
+                    color: AppColors.accent.withValues(alpha: 0.4),
                   ),
                 ),
               ),
@@ -150,10 +157,7 @@ class _ConnectScreenState extends State<ConnectScreen>
           height: 180,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(
-              color: const Color(0xFF1A1512),
-              width: 1,
-            ),
+            border: Border.all(color: AppColors.surface, width: 1),
           ),
         ),
         // inner watch circle
@@ -162,18 +166,15 @@ class _ConnectScreenState extends State<ConnectScreen>
           height: 140,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: const Color(0xFF1A1512),
-            border: Border.all(
-              color: const Color(0xFF252018),
-              width: 2,
-            ),
+            color: AppColors.surface,
+            border: Border.all(color: AppColors.raised, width: 2),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(
                 Icons.watch_outlined,
-                color: Color(0xFFC8B89A),
+                color: AppColors.accent,
                 size: 36,
               ),
               const SizedBox(height: 8),
@@ -181,7 +182,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFC8B89A).withOpacity(0.6),
+                  color: AppColors.accent.withValues(alpha: 0.6),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -205,7 +206,7 @@ class _ConnectScreenState extends State<ConnectScreen>
                 fontFamily: 'Inter',
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFFE8DFD0),
+                color: AppColors.ink,
               ),
             ),
           ),
@@ -215,18 +216,14 @@ class _ConnectScreenState extends State<ConnectScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: const [
-                Icon(
-                  Icons.info_outline,
-                  color: Color(0xFF6B6460),
-                  size: 16,
-                ),
+                Icon(Icons.info_outline, color: AppColors.muted, size: 16),
                 SizedBox(width: 6),
                 Text(
                   'Connection Guide',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 15,
-                    color: Color(0xFF6B6460),
+                    color: AppColors.muted,
                   ),
                 ),
               ],

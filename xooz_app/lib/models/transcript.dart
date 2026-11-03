@@ -18,7 +18,9 @@ class Transcript {
       id: json['id'],
       userId: json['user_id'],
       text: json['text'],
-      speakerLabels: List<Map<String, dynamic>>.from(json['speaker_labels'] ?? []),
+      speakerLabels: List<Map<String, dynamic>>.from(
+        json['speaker_labels'] ?? [],
+      ),
       recordedAt: DateTime.parse(json['recorded_at']),
     );
   }

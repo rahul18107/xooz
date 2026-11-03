@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class SearchCategory {
@@ -26,14 +27,54 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _isSearching = false;
 
   final List<SearchCategory> _categories = [
-    SearchCategory(title: 'Starred', icon: Icons.star_outline, count: 0, iconColor: Color(0xFFE8DFD0)),
-    SearchCategory(title: 'Work', icon: Icons.work_outline, count: 0, iconColor: Color(0xFFC8B89A)),
-    SearchCategory(title: 'Personal', icon: Icons.favorite_outline, count: 0, iconColor: Color(0xFFE8DFD0)),
-    SearchCategory(title: 'Social', icon: Icons.group_outlined, count: 0, iconColor: Color(0xFFC8B89A)),
-    SearchCategory(title: 'Recaps', icon: Icons.calendar_today_outlined, count: 0, iconColor: Color(0xFFE8DFD0)),
-    SearchCategory(title: 'Memories', icon: Icons.psychology_outlined, count: 0, iconColor: Color(0xFFC8B89A)),
-    SearchCategory(title: 'People', icon: Icons.people_outline, count: 0, iconColor: Color(0xFFE8DFD0)),
-    SearchCategory(title: 'Places', icon: Icons.place_outlined, count: 0, iconColor: Color(0xFFC8B89A)),
+    SearchCategory(
+      title: 'Starred',
+      icon: Icons.star_outline,
+      count: 0,
+      iconColor: AppColors.ink,
+    ),
+    SearchCategory(
+      title: 'Work',
+      icon: Icons.work_outline,
+      count: 0,
+      iconColor: AppColors.accent,
+    ),
+    SearchCategory(
+      title: 'Personal',
+      icon: Icons.favorite_outline,
+      count: 0,
+      iconColor: AppColors.ink,
+    ),
+    SearchCategory(
+      title: 'Social',
+      icon: Icons.group_outlined,
+      count: 0,
+      iconColor: AppColors.accent,
+    ),
+    SearchCategory(
+      title: 'Recaps',
+      icon: Icons.calendar_today_outlined,
+      count: 0,
+      iconColor: AppColors.ink,
+    ),
+    SearchCategory(
+      title: 'Memories',
+      icon: Icons.psychology_outlined,
+      count: 0,
+      iconColor: AppColors.accent,
+    ),
+    SearchCategory(
+      title: 'People',
+      icon: Icons.people_outline,
+      count: 0,
+      iconColor: AppColors.ink,
+    ),
+    SearchCategory(
+      title: 'Places',
+      icon: Icons.place_outlined,
+      count: 0,
+      iconColor: AppColors.accent,
+    ),
   ];
 
   @override
@@ -45,7 +86,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -70,16 +111,15 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
                 borderRadius: BorderRadius.circular(30),
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.search,
-                    color: Color(0xFF6B6460),
-                    size: 18,
-                  ),
+                  const Icon(Icons.search, color: AppColors.muted, size: 18),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextField(
@@ -88,18 +128,17 @@ class _SearchScreenState extends State<SearchScreen> {
                       style: const TextStyle(
                         fontFamily: 'Inter',
                         fontSize: 15,
-                        color: Color(0xFFE8DFD0),
+                        color: AppColors.ink,
                       ),
                       decoration: const InputDecoration(
                         hintText: 'Search',
                         hintStyle: TextStyle(
                           fontFamily: 'Inter',
                           fontSize: 15,
-                          color: Color(0xFF6B6460),
+                          color: AppColors.muted,
                         ),
                         border: InputBorder.none,
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 14),
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
                       ),
                       onChanged: (value) {
                         setState(() => _isSearching = value.isNotEmpty);
@@ -118,7 +157,7 @@ class _SearchScreenState extends State<SearchScreen> {
               style: TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 15,
-                color: Color(0xFFC8B89A),
+                color: AppColors.accent,
               ),
             ),
           ),
@@ -150,8 +189,11 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1512),
-          borderRadius: BorderRadius.circular(16),
+          color: AppColors.surface,
+          border: const Border.fromBorderSide(
+            BorderSide(color: AppColors.homeBorder),
+          ),
+          borderRadius: BorderRadius.circular(28),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,18 +201,14 @@ class _SearchScreenState extends State<SearchScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(
-                  category.icon,
-                  color: category.iconColor,
-                  size: 22,
-                ),
+                Icon(category.icon, color: AppColors.ink, size: 22),
                 Text(
                   category.count.toString(),
                   style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFFE8DFD0),
+                    color: AppColors.ink,
                   ),
                 ),
               ],
@@ -181,7 +219,7 @@ class _SearchScreenState extends State<SearchScreen> {
               style: const TextStyle(
                 fontFamily: 'Inter',
                 fontSize: 14,
-                color: Color(0xFF6B6460),
+                color: AppColors.cardMuted,
               ),
             ),
           ],
@@ -197,7 +235,7 @@ class _SearchScreenState extends State<SearchScreen> {
         style: const TextStyle(
           fontFamily: 'Inter',
           fontSize: 14,
-          color: Color(0xFF6B6460),
+          color: AppColors.muted,
         ),
       ),
     );

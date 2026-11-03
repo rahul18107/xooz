@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -13,8 +14,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   final List<String> _weekDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   final List<String> _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
 
   void _previousMonth() {
@@ -63,7 +74,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF0A0A0A),
+        color: AppColors.background,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
@@ -89,7 +100,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       width: 36,
       height: 4,
       decoration: BoxDecoration(
-        color: const Color(0xFF3A3530),
+        color: AppColors.inactive,
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -103,19 +114,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
           const Text(
             'Filter by date',
             style: TextStyle(
-              fontFamily: 'DMSerifDisplay',
+              fontFamily: 'Inter',
               fontSize: 20,
-              color: Color(0xFFE8DFD0),
+              fontWeight: FontWeight.w600,
+              color: AppColors.ink,
             ),
           ),
           const Spacer(),
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child: const Icon(
-              Icons.close,
-              color: Color(0xFF6B6460),
-              size: 20,
-            ),
+            child: const Icon(Icons.close, color: AppColors.muted, size: 20),
           ),
         ],
       ),
@@ -137,13 +145,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     fontFamily: 'Inter',
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFFE8DFD0),
+                    color: AppColors.ink,
                   ),
                 ),
                 const SizedBox(width: 4),
                 const Icon(
                   Icons.keyboard_arrow_down,
-                  color: Color(0xFF6B6460),
+                  color: AppColors.muted,
                   size: 18,
                 ),
               ],
@@ -156,12 +164,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
-                borderRadius: BorderRadius.circular(16),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
+                borderRadius: BorderRadius.circular(28),
               ),
               child: const Icon(
                 Icons.chevron_left,
-                color: Color(0xFF6B6460),
+                color: AppColors.muted,
                 size: 18,
               ),
             ),
@@ -173,12 +184,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1512),
-                borderRadius: BorderRadius.circular(16),
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
+                borderRadius: BorderRadius.circular(28),
               ),
               child: const Icon(
                 Icons.chevron_right,
-                color: Color(0xFF6B6460),
+                color: AppColors.muted,
                 size: 18,
               ),
             ),
@@ -203,7 +217,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     style: const TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 13,
-                      color: Color(0xFF6B6460),
+                      color: AppColors.muted,
                     ),
                   ),
                 ),
@@ -234,9 +248,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: Container(
               margin: const EdgeInsets.all(2),
               decoration: BoxDecoration(
-                color: _isSelected(date)
-                    ? const Color(0xFFE8DFD0)
-                    : Colors.transparent,
+                color: _isSelected(date) ? AppColors.ink : Colors.transparent,
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Center(
@@ -249,10 +261,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         ? FontWeight.w600
                         : FontWeight.w400,
                     color: _isSelected(date)
-                        ? const Color(0xFF0A0A0A)
+                        ? AppColors.background
                         : _isToday(date)
-                            ? const Color(0xFFC8B89A)
-                            : const Color(0xFFE8DFD0),
+                        ? AppColors.accent
+                        : AppColors.ink,
                   ),
                 ),
               ),
@@ -272,7 +284,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: const Color(0xFFE8DFD0),
+            color: AppColors.ink,
             borderRadius: BorderRadius.circular(30),
           ),
           child: const Center(
@@ -282,7 +294,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 fontFamily: 'Inter',
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF0A0A0A),
+                color: AppColors.background,
               ),
             ),
           ),

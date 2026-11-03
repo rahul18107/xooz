@@ -25,9 +25,8 @@ class Digest {
 
   String get dateLabel {
     final now = DateTime.now();
-    final isToday = date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day;
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
     if (isToday) return 'Today';
     return '${date.day}/${date.month}/${date.year}';
   }

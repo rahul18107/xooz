@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../models/transcript.dart';
 
@@ -5,11 +6,7 @@ class TranscriptTile extends StatelessWidget {
   final Transcript transcript;
   final VoidCallback? onTap;
 
-  const TranscriptTile({
-    super.key,
-    required this.transcript,
-    this.onTap,
-  });
+  const TranscriptTile({super.key, required this.transcript, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -17,24 +14,25 @@ class TranscriptTile extends StatelessWidget {
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1512),
-          borderRadius: BorderRadius.circular(16),
+          color: AppColors.homeCard,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppColors.homeBorder),
         ),
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: const Color(0xFF252018),
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.homeBackground,
+                shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.mic,
-                color: Color(0xFFC8B89A),
-                size: 20,
+                Icons.mic_none,
+                color: AppColors.homeInk,
+                size: 22,
               ),
             ),
             const SizedBox(width: 14),
@@ -46,9 +44,9 @@ class TranscriptTile extends StatelessWidget {
                     transcript.shortText,
                     style: const TextStyle(
                       fontFamily: 'Inter',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFFE8DFD0),
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.homeInk,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -58,18 +56,16 @@ class TranscriptTile extends StatelessWidget {
                     transcript.timeLabel,
                     style: const TextStyle(
                       fontFamily: 'Inter',
-                      fontSize: 12,
-                      color: Color(0xFF6B6460),
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.homeMuted,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              color: Color(0xFF6B6460),
-              size: 18,
-            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.more_vert, color: AppColors.homeMuted, size: 22),
           ],
         ),
       ),

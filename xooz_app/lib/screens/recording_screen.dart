@@ -1,5 +1,7 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../services/audio_service.dart';
 import '../services/api_service.dart';
 
@@ -63,7 +65,7 @@ class _RecordingScreenState extends State<RecordingScreen>
       final file = await AudioService.stopRecording();
       if (file == null) throw Exception('No audio recorded');
 
-      final transcript = await ApiService.uploadAudio(file);
+      await ApiService.uploadAudio(file);
 
       setState(() => _statusMessage = 'Done');
       await Future.delayed(const Duration(milliseconds: 800));
@@ -99,7 +101,7 @@ class _RecordingScreenState extends State<RecordingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -114,12 +116,15 @@ class _RecordingScreenState extends State<RecordingScreen>
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A1512),
+                        color: AppColors.surface,
+                        border: const Border.fromBorderSide(
+                          BorderSide(color: AppColors.homeBorder),
+                        ),
                         borderRadius: BorderRadius.circular(19),
                       ),
                       child: const Icon(
                         Icons.close,
-                        color: Color(0xFF6B6460),
+                        color: AppColors.muted,
                         size: 18,
                       ),
                     ),
@@ -130,46 +135,45 @@ class _RecordingScreenState extends State<RecordingScreen>
               if (_isRecording)
                 ScaleTransition(
                   scale: _pulseAnimation,
-                  child: Container(
-                    width: 180,
-                    height: 180,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1512),
-                      borderRadius: BorderRadius.circular(90),
-                      border: Border.all(
-                        color: const Color(0xFFC8B89A).withOpacity(0.3),
-                        width: 1.5,
+                  child: CustomPaint(
+                    foregroundPainter: _RecordingDialPainter(),
+                    child: Container(
+                      width: 180,
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        border: const Border.fromBorderSide(
+                          BorderSide(color: AppColors.homeBorder),
+                        ),
+                        borderRadius: BorderRadius.circular(90),
                       ),
-                    ),
-                    child: const Icon(
-                      Icons.mic,
-                      color: Color(0xFFE8DFD0),
-                      size: 60,
+                      child: const Icon(
+                        Icons.mic_none_rounded,
+                        color: AppColors.ink,
+                        size: 60,
+                      ),
                     ),
                   ),
                 )
               else if (_isUploading)
-                const CircularProgressIndicator(
-                  color: Color(0xFFC8B89A),
-                ),
+                const CircularProgressIndicator(color: AppColors.accent),
               const SizedBox(height: 32),
               if (_isRecording)
                 Text(
                   _formatDuration(_duration),
                   style: const TextStyle(
-                    fontFamily: 'DMSerifDisplay',
+                    fontFamily: 'Inter',
                     fontSize: 48,
-                    color: Color(0xFFE8DFD0),
+                    color: AppColors.ink,
                   ),
                 ),
               const SizedBox(height: 12),
               Text(
-                _statusMessage ??
-                    (_isRecording ? 'Recording...' : ''),
+                _statusMessage ?? (_isRecording ? 'Recording...' : ''),
                 style: const TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 14,
-                  color: Color(0xFF6B6460),
+                  color: AppColors.muted,
                 ),
               ),
               const Spacer(),
@@ -180,12 +184,12 @@ class _RecordingScreenState extends State<RecordingScreen>
                     width: 72,
                     height: 72,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE8DFD0),
+                      color: AppColors.ink,
                       borderRadius: BorderRadius.circular(36),
                     ),
                     child: const Icon(
                       Icons.stop_rounded,
-                      color: Color(0xFF0A0A0A),
+                      color: AppColors.background,
                       size: 32,
                     ),
                   ),
@@ -197,4 +201,30 @@ class _RecordingScreenState extends State<RecordingScreen>
       ),
     );
   }
+}
+
+class _RecordingDialPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    final paint = Paint()
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    for (var tick = 0; tick < 48; tick++) {
+      final angle = tick * math.pi / 24 - math.pi / 2;
+      final direction = Offset(math.cos(angle), math.sin(angle));
+      paint.color = tick >= 28 && tick <= 38
+          ? AppColors.accent
+          : AppColors.raised;
+      canvas.drawLine(
+        center + direction * (radius - 12),
+        center + direction * (radius - 4),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RecordingDialPainter oldDelegate) => false;
 }
