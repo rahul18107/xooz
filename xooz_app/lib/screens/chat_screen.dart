@@ -1,11 +1,12 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class ChatMessage {
   final String text;
   final bool isUser;
 
-  ChatMessage({required this.text, required this.isUser});
+  const ChatMessage({required this.text, required this.isUser});
 }
 
 class ChatScreen extends StatefulWidget {
@@ -21,6 +22,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
 
+  String? _sessionId;
+
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
@@ -34,27 +37,36 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+    final message = text.trim();
+    if (message.isEmpty || _isTyping) return;
     _controller.clear();
 
     setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true));
+      _messages.add(ChatMessage(text: message, isUser: true));
       _isTyping = true;
     });
     _scrollToBottom();
 
-    // placeholder response for now
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() {
-      _messages.add(
-        ChatMessage(
-          text:
-              'This feature is coming soon. Your conversations will be searchable here.',
-          isUser: false,
-        ),
-      );
-      _isTyping = false;
-    });
+    try {
+      final reply = await ApiService.sendChat(message, sessionId: _sessionId);
+      if (!mounted) return;
+      setState(() {
+        _sessionId = reply.sessionId;
+        _messages.add(ChatMessage(text: reply.reply, isUser: false));
+        _isTyping = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(
+          const ChatMessage(
+            text: 'Couldn\'t reach the server. Make sure it\'s running and try again.',
+            isUser: false,
+          ),
+        );
+        _isTyping = false;
+      });
+    }
     _scrollToBottom();
   }
 

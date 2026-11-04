@@ -1,10 +1,59 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import '../models/chat.dart';
 import '../models/transcript.dart';
 import '../widgets/transcript_tile.dart';
+import 'transcript_screen.dart';
 
-class ActivityScreen extends StatelessWidget {
+class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
+
+  @override
+  State<ActivityScreen> createState() => _ActivityScreenState();
+}
+
+class _ActivityScreenState extends State<ActivityScreen> {
+  ActivityFeed? _feed;
+  bool _loading = true;
+  bool _error = false;
+
+  List get _needsAttention => _feed?.needsAttention ?? [];
+  List get _today => _feed?.today ?? [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActivity();
+  }
+
+  Future<void> _loadActivity() async {
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final feed = await ApiService.getActivity();
+      if (!mounted) return;
+      setState(() {
+        _feed = feed;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = true;
+      });
+    }
+  }
+
+  void _openTranscript(Transcript transcript) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => TranscriptScreen(transcript: transcript)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,26 +64,58 @@ class ActivityScreen extends StatelessWidget {
           children: [
             _buildTopBar(context),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  const SizedBox(height: 8),
-                  _buildSection(
-                    title: 'Needs Attention',
-                    items: [],
-                    emptyMessage: 'Nothing needs attention',
-                  ),
-                  const SizedBox(height: 24),
-                  _buildSection(
-                    title: 'Today',
-                    items: [],
-                    emptyMessage: 'No recordings today yet',
-                  ),
-                ],
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.accent),
+                    )
+                  : _buildBody(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_error) {
+      return RefreshIndicator(
+        onRefresh: _loadActivity,
+        color: AppColors.accent,
+        child: ListView(
+          children: const [
+            SizedBox(height: 80),
+            Center(
+              child: Text(
+                'Couldn\'t load activity.\nCheck that the server is running.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppColors.muted),
               ),
             ),
           ],
         ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadActivity,
+      color: AppColors.accent,
+      backgroundColor: AppColors.surface,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 8),
+          _buildSection(
+            title: 'Needs Attention',
+            items: _needsAttention,
+            emptyMessage: 'Nothing needs attention',
+          ),
+          const SizedBox(height: 24),
+          _buildSection(
+            title: 'Today',
+            items: _today,
+            emptyMessage: 'No recordings today yet',
+          ),
+        ],
       ),
     );
   }
@@ -82,7 +163,7 @@ class ActivityScreen extends StatelessWidget {
 
   Widget _buildSection({
     required String title,
-    required List<Transcript> items,
+    required List items,
     required String emptyMessage,
   }) {
     return Column(
@@ -121,7 +202,10 @@ class ActivityScreen extends StatelessWidget {
               )
             : Column(
                 children: items
-                    .map((t) => TranscriptTile(transcript: t))
+                    .map((t) => TranscriptTile(
+                          transcript: t,
+                          onTap: () => _openTranscript(t),
+                        ))
                     .toList(),
               ),
       ],

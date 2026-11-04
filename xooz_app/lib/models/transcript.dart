@@ -21,7 +21,7 @@ class Transcript {
       speakerLabels: List<Map<String, dynamic>>.from(
         json['speaker_labels'] ?? [],
       ),
-      recordedAt: DateTime.parse(json['recorded_at']),
+      recordedAt: DateTime.parse(json['recorded_at']).toLocal(),
     );
   }
 

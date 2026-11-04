@@ -10,7 +10,7 @@ class AppColors {
   static const homeInk = Color(0xFF30322F);
   static const homeMuted = Color(0xFF858882);
   static const homeBorder = Color(0xFFE5E6E1);
-  static const homeAccent = Color(0xFFF47B25);
+  static const homeAccent = Colors.black;
   static const surface = homeCard;
   static const raised = homeBorder;
   static const ivory = homeInk;

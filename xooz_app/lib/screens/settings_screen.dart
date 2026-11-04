@@ -1,8 +1,40 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import '../models/chat.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  ProfileInfo? _profile;
+  UsageInfo? _usage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final results = await Future.wait([
+        ApiService.getProfile(),
+        ApiService.getUsage(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _profile = results[0] as ProfileInfo?;
+        _usage = results[1] as UsageInfo?;
+      });
+    } catch (e) {
+      // keep the placeholder data
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +61,7 @@ class SettingsScreen extends StatelessWidget {
                     _SettingsItem(
                       icon: Icons.bar_chart_outlined,
                       title: 'Plan & Usage',
+                      subtitle: _usage?.label,
                       iconColor: AppColors.ink,
                     ),
                     _SettingsItem(
@@ -137,6 +170,13 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildProfileCard() {
+    final name = _profile?.displayName?.isNotEmpty == true
+        ? _profile!.displayName!
+        : 'Rahul';
+    final email = _profile?.email?.isNotEmpty == true
+        ? _profile!.email!
+        : 'rahul@gmail.com';
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -162,23 +202,23 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Rahul',
-                  style: TextStyle(
+                  name,
+                  style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: AppColors.ink,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'rahul@gmail.com',
-                  style: TextStyle(
+                  email,
+                  style: const TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 13,
                     color: AppColors.cardMuted,

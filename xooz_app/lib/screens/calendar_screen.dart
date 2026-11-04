@@ -9,6 +9,9 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  static const int _calendarCellCount = 42;
+  static const double _calendarGridHeight = 252;
+
   DateTime _selectedDate = DateTime.now();
   DateTime _focusedMonth = DateTime.now();
 
@@ -52,6 +55,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     for (int i = 1; i <= lastDay.day; i++) {
       days.add(DateTime(_focusedMonth.year, _focusedMonth.month, i));
+    }
+
+    while (days.length < _calendarCellCount) {
+      days.add(null);
     }
 
     return days;
@@ -232,45 +239,47 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final days = _getDaysInMonth();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 7,
-          childAspectRatio: 1,
-        ),
-        itemCount: days.length,
-        itemBuilder: (context, index) {
-          final date = days[index];
-          if (date == null) return const SizedBox();
-          return GestureDetector(
-            onTap: () => setState(() => _selectedDate = date),
-            child: Container(
-              margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: _isSelected(date) ? AppColors.ink : Colors.transparent,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Center(
-                child: Text(
-                  date.day.toString(),
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 14,
-                    fontWeight: _isToday(date)
-                        ? FontWeight.w600
-                        : FontWeight.w400,
-                    color: _isSelected(date)
-                        ? AppColors.background
-                        : _isToday(date)
-                        ? AppColors.accent
-                        : AppColors.ink,
+      child: SizedBox(
+        height: _calendarGridHeight,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            childAspectRatio: 1,
+          ),
+          itemCount: _calendarCellCount,
+          itemBuilder: (context, index) {
+            final date = days[index];
+            if (date == null) return const SizedBox();
+            return GestureDetector(
+              onTap: () => setState(() => _selectedDate = date),
+              child: Container(
+                margin: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: _isSelected(date) ? AppColors.ink : Colors.transparent,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Center(
+                  child: Text(
+                    date.day.toString(),
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 14,
+                      fontWeight: _isToday(date)
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: _isSelected(date)
+                          ? AppColors.background
+                          : _isToday(date)
+                          ? AppColors.accent
+                          : AppColors.ink,
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

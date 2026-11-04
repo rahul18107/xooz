@@ -12,6 +12,7 @@ import 'chat_screen.dart';
 import 'search_screen.dart';
 import 'connect_screen.dart';
 import 'settings_screen.dart';
+import 'transcript_screen.dart';
 import 'activity_screen.dart';
 import 'calendar_screen.dart';
 import 'tasks_screen.dart';
@@ -27,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   Digest? _digest;
-  final List<Transcript> _transcripts = [];
+  List<Transcript> _transcripts = [];
   bool _loading = true;
 
   @override
@@ -38,18 +39,37 @@ class _HomeScreenState extends State<HomeScreen>
     _loadData();
   }
 
+  String _formatDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
-      final digest = await ApiService.getDigest();
+      final now = DateTime.now();
+      final results = await Future.wait([
+        ApiService.getDigest(),
+        ApiService.getTranscripts(date: _formatDate(now)),
+      ]);
       if (!mounted) return;
       setState(() {
-        _digest = digest;
+        _digest = results[0] as Digest;
+        _transcripts = results[1] as List<Transcript>;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+    }
+  }
+
+  // Calendar "Done" returns the picked date — show that day's recap
+  Future<void> _showRecapFor(DateTime date) async {
+    try {
+      final digest = await ApiService.getDigest(date: _formatDate(date));
+      if (!mounted || digest == null) return;
+      setState(() => _digest = digest);
+    } catch (e) {
+      // keep showing the current recap
     }
   }
 
@@ -135,12 +155,16 @@ class _HomeScreenState extends State<HomeScreen>
           const Spacer(),
           _topIcon(
             Icons.calendar_today_outlined,
-            () => showModalBottomSheet(
-              context: context,
-              backgroundColor: Colors.transparent,
-              isScrollControlled: true,
-              builder: (_) => const CalendarScreen(),
-            ),
+            () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (_) => const CalendarScreen(),
+              ).then((result) {
+                if (result is DateTime) _showRecapFor(result);
+              });
+            },
           ),
           const SizedBox(width: 8),
           _topIcon(
@@ -332,7 +356,15 @@ class _HomeScreenState extends State<HomeScreen>
               )
             : Column(
                 children: _transcripts
-                    .map((t) => TranscriptTile(transcript: t))
+                    .map((t) => TranscriptTile(
+                          transcript: t,
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TranscriptScreen(transcript: t),
+                            ),
+                          ),
+                        ))
                     .toList(),
               ),
       ],

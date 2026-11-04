@@ -128,7 +128,7 @@ class TranscriptScreen extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         Text(
-          transcript.shortText,
+          transcript.text,
           style: const TextStyle(
             fontFamily: 'Inter',
             fontSize: 24,
@@ -136,6 +136,8 @@ class TranscriptScreen extends StatelessWidget {
             color: AppColors.ink,
             height: 1.3,
           ),
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
