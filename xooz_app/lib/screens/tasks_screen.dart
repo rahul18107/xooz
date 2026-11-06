@@ -4,7 +4,10 @@ import '../models/task.dart';
 import '../services/api_service.dart';
 
 class TasksScreen extends StatefulWidget {
-  const TasksScreen({super.key});
+  final String? date;
+  final String? title;
+
+  const TasksScreen({super.key, this.date, this.title});
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
@@ -27,7 +30,7 @@ class _TasksScreenState extends State<TasksScreen> {
       _error = false;
     });
     try {
-      final tasks = await ApiService.getTasks();
+      final tasks = await ApiService.getTasks(date: widget.date);
       if (!mounted) return;
       setState(() {
         _tasks = tasks;
@@ -122,8 +125,8 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Tasks',
+                Text(
+                  widget.title ?? 'Tasks',
                   style: TextStyle(
                     fontFamily: 'Inter',
                     fontSize: 24,
@@ -152,6 +155,20 @@ class _TasksScreenState extends State<TasksScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       children: [
+        if (widget.title != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 14),
+            child: Text(
+              widget.title!,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.ink,
+              ),
+            ),
+          ),
+        ],
         if (_open.isNotEmpty) ...[
           const SizedBox(height: 12),
           _sectionLabel('Open'),

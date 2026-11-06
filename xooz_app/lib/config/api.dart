@@ -14,6 +14,10 @@ class ApiConfig {
   static String getDigest(String userId) => '$baseUrl/digest/$userId';
   static String getDigests(String userId) => '$baseUrl/digests/$userId';
 
+  // Daily Recap screen (digest + stats + day recordings)
+  static String recap(String userId, String date) =>
+      '$baseUrl/recap/$userId?date=$date';
+
   // Tasks
   static const String tasks = '$baseUrl/tasks';
   static String taskDetail(String id) => '$baseUrl/tasks/$id';

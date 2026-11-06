@@ -28,3 +28,22 @@ app.include_router(devices_router, prefix="/api/v1")
 @app.get("/")
 def root():
     return {"status": "Xooz backend is running"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+# Some local tooling probes this endpoint expecting an OpenAI-compatible server.
+# It's not used by the Xooz app; return a minimal valid response to avoid 404 noise.
+@app.get("/v1/models")
+def list_models():
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": "xooz",
+                "object": "model",
+                "owned_by": "xooz-server",
+            }
+        ],
+    }

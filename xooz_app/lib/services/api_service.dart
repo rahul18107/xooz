@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../config/api.dart';
 import '../models/transcript.dart';
 import '../models/digest.dart';
+import '../models/recap.dart';
 import '../models/task.dart';
 import '../models/chat.dart';
 
@@ -66,7 +67,7 @@ class ApiService {
 
   // ---------------- audio ----------------
 
-  static Future<Transcript?> uploadAudio(File audioFile) async {
+  static Future<Transcript?> uploadAudio(File audioFile, {Duration? duration}) async {
     try {
       final request = http.MultipartRequest(
         'POST',
@@ -74,6 +75,9 @@ class ApiService {
       );
 
       request.fields['user_id'] = ApiConfig.testUserId;
+      if (duration != null) {
+        request.fields['duration_seconds'] = duration.inSeconds.toString();
+      }
       request.files.add(
         await http.MultipartFile.fromPath('file', audioFile.path),
       );
@@ -126,12 +130,25 @@ class ApiService {
         .toList();
   }
 
+  /// Everything for the Daily Recap screen of one day.
+  static Future<Recap> getRecap({String? date}) async {
+    String url = ApiConfig.recap(ApiConfig.testUserId, date ?? '');
+    // for today the endpoint works without an explicit date
+    if (date == null) {
+      url = '${ApiConfig.baseUrl}/recap/${ApiConfig.testUserId}';
+    }
+
+    final json = await _get(url);
+    return Recap.fromJson(json);
+  }
+
   // ---------------- transcripts ----------------
 
   /// Newest first. Pass [date] as 'yyyy-MM-dd' to filter to one day.
-  static Future<List<Transcript>> getTranscripts({String? date}) async {
+  static Future<List<Transcript>> getTranscripts({String? date, int limit = 50}) async {
     String url = '${ApiConfig.transcripts}?user_id=${ApiConfig.testUserId}';
     if (date != null) url += '&date=$date';
+    url += '&limit=$limit';
 
     final json = await _get(url);
     final transcripts = json['transcripts'] as List? ?? [];
@@ -143,12 +160,55 @@ class ApiService {
     return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
   }
 
+  /// Generate (or fetch cached) AI summary for one recording.
+  /// Returns (title, summary).
+  static Future<({String title, String summary})> generateSummary(
+    String id, {
+    bool force = false,
+  }) async {
+    String url = '${ApiConfig.transcriptDetail(id)}/summary';
+    if (force) url += '?force=true';
+
+    final json = await _post(url, {});
+    return (
+      title: json['title'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+    );
+  }
+
+  /// Rename a recording (heading one-liner).
+  static Future<Transcript> renameTranscript(String id, String title) async {
+    final json = await _patch(
+      ApiConfig.transcriptDetail(id),
+      {'title': title},
+    );
+    return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
+  }
+
+  /// Star / unstar a recording.
+  static Future<Transcript> setStarred(String id, bool starred) async {
+    final json = await _patch(
+      ApiConfig.transcriptDetail(id),
+      {'starred': starred},
+    );
+    return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
+  }
+
+  /// Delete a recording permanently.
+  static Future<void> deleteTranscript(String id) async {
+    await _delete(ApiConfig.transcriptDetail(id));
+  }
+
+  static Future<Map<String, dynamic>> _delete(String url) => _request(
+        () => http.delete(Uri.parse(url)),
+      );
+
   // ---------------- tasks ----------------
 
-  static Future<List<Task>> getTasks() async {
-    final json = await _get(
-      '${ApiConfig.tasks}?user_id=${ApiConfig.testUserId}',
-    );
+  static Future<List<Task>> getTasks({String? date}) async {
+    var url = '${ApiConfig.tasks}?user_id=${ApiConfig.testUserId}';
+    if (date != null) url += '&date=$date';
+    final json = await _get(url);
     final tasks = json['tasks'] as List? ?? [];
     return tasks.map((t) => Task.fromJson(t as Map<String, dynamic>)).toList();
   }

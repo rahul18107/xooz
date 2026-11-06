@@ -79,6 +79,45 @@ Transcript:
         return fallback
 
 
+def summarize_transcript(text: str, speaker_labels: list | None = None) -> dict:
+    """Summarize ONE recording for the transcript detail screen.
+    Returns {"title": one-liner headline, "summary": bullet list}."""
+    fallback_title = None
+    turns = [
+        f"Speaker {utterance['speaker']}: {utterance['text']}"
+        for utterance in (speaker_labels or [])
+        if utterance.get("speaker") and utterance.get("text")
+    ]
+    recording = "\n".join(turns) if turns else text
+    if not recording or not recording.strip():
+        return {"title": "Empty recording", "summary": "This recording has no transcript content."}
+
+    prompt = f"""Summarize this single conversation recording. Format your response EXACTLY like this:
+Line 1: a plain title of max 8 words (no quotes, no dash, no bullet)
+Then 2-5 bullet lines starting with "- " covering what was discussed, decisions made, and commitments.
+When speaker labels are present, attribute statements and commitments to the correct speaker.
+Use Speaker A, Speaker B, etc. unless the recording explicitly identifies a person by name.
+
+Recording:
+{recording[:4000]}"""
+
+    response = _call_llm(prompt, max_tokens=400)
+
+    lines = [l.strip() for l in response.strip().split('\n') if l.strip()]
+    title = None
+    if lines and not lines[0].startswith(('-', '•')):
+        candidate = lines[0].lstrip('#* ').strip()
+        if candidate:
+            title = candidate[:60]
+            lines = lines[1:]
+
+    summary = '\n'.join(lines) if lines else response.strip()
+    if not title and summary:
+        fallback_title = summary.splitlines()[0].lstrip('-• ').strip()[:60]
+
+    return {"title": title or fallback_title or "Recording", "summary": summary}
+
+
 def extract_tasks(text: str) -> list:
     """Pull actionable to-dos out of a transcript."""
     if not text or not text.strip():

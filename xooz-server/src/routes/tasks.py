@@ -1,5 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query
-from src.services.database import get_tasks, get_task_by_id, update_task
+from src.services.database import (
+    day_bounds_utc,
+    get_tasks,
+    get_task_by_id,
+    get_transcripts,
+    update_task,
+)
 import uuid
 
 def _validate_uuid(value: str) -> str:
@@ -16,6 +22,7 @@ ALLOWED_STATUSES = {"open", "done", "snoozed"}
 async def list_tasks(
     user_id: str = Query(...),
     status: str = None,
+    date: str = None,
     limit: int = Query(100, ge=1, le=200),
 ):
     """Tasks extracted from conversations. status = open | done | snoozed."""
@@ -23,6 +30,15 @@ async def list_tasks(
         raise HTTPException(status_code=400, detail="status must be one of: open, done, snoozed")
     try:
         tasks = get_tasks(user_id=user_id, status=status, limit=limit)
+        if date:
+            start_iso, end_iso = day_bounds_utc(user_id, date)
+            transcripts = get_transcripts(user_id=user_id, date=date, limit=200)
+            transcript_ids = {t["id"] for t in transcripts}
+            tasks = [
+                task for task in tasks
+                if (task.get("source_transcript_id") in transcript_ids)
+                or (task.get("created_at") and start_iso <= task["created_at"] < end_iso)
+            ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"success": True, "tasks": tasks, "count": len(tasks)}

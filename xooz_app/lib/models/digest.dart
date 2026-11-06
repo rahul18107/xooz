@@ -1,3 +1,5 @@
+import 'recap.dart';
+
 class Digest {
   final String id;
   final String userId;
@@ -24,15 +26,17 @@ class Digest {
   }
 
   String get dateLabel {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final now = DateTime.now();
     final isToday =
         date.year == now.year && date.month == now.month && date.day == now.day;
     if (isToday) return 'Today';
-    return '${date.day}/${date.month}/${date.year}';
+    return '${weekdays[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
   }
 
   String get shortSummary {
-    if (summary.length <= 80) return summary;
-    return '${summary.substring(0, 80)}...';
+    return Recap.parseDigest(summary).$1;
   }
 }

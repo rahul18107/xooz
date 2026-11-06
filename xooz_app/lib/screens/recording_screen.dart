@@ -6,7 +6,11 @@ import '../services/audio_service.dart';
 import '../services/api_service.dart';
 
 class RecordingScreen extends StatefulWidget {
-  const RecordingScreen({super.key});
+  /// Called when an upload succeeds after this screen was already closed
+  /// (user hit the cross mid-transcription) so the home list can refresh.
+  final VoidCallback? onUploadFinished;
+
+  const RecordingScreen({super.key, this.onUploadFinished});
 
   @override
   State<RecordingScreen> createState() => _RecordingScreenState();
@@ -64,14 +68,33 @@ class _RecordingScreenState extends State<RecordingScreen>
     try {
       final file = await AudioService.stopRecording();
       if (file == null) throw Exception('No audio recorded');
+      if (_duration < const Duration(seconds: 1) ||
+          !await file.exists() ||
+          await file.length() < 2048) {
+        throw Exception('Recording is empty or too short. Please try again.');
+      }
 
-      await ApiService.uploadAudio(file);
+      await ApiService.uploadAudio(file, duration: _duration);
 
+      if (!mounted) {
+        // user already closed the screen mid-transcription — the transcript
+        // was still saved on the server; refresh the list behind us
+        widget.onUploadFinished?.call();
+        // upload finished, the temp file is safe to remove now
+        await AudioService.deletePendingFile();
+        return;
+      }
       setState(() => _statusMessage = 'Done');
       await Future.delayed(const Duration(milliseconds: 800));
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
+      // upload failed with the screen already closed — the recording was
+      // never sent, so discard the temp file quietly
+      if (!mounted) {
+        await AudioService.deletePendingFile();
+        return;
+      }
       setState(() {
         _isUploading = false;
         _statusMessage = 'Failed: ${e.toString()}';
@@ -81,8 +104,14 @@ class _RecordingScreenState extends State<RecordingScreen>
 
   Future<void> _cancel() async {
     _timer?.cancel();
-    await AudioService.cancelRecording();
-    if (mounted) Navigator.pop(context);
+    _pulseController.stop();
+    if (!mounted) return;
+    final wasUploading = _isUploading;
+    // leave instantly — don't wait for the recorder to shut down
+    Navigator.pop(context);
+    // discard the recording — but never delete a file that an active
+    // upload is still reading, or the transcript would be lost
+    await AudioService.cancelRecording(deleteFile: !wasUploading);
   }
 
   String _formatDuration(Duration d) {

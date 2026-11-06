@@ -26,6 +26,7 @@ class AudioService {
       ),
       path: _currentPath!,
     );
+
   }
 
   static Future<File?> stopRecording() async {
@@ -38,12 +39,21 @@ class AudioService {
     return await _recorder.isRecording();
   }
 
-  static Future<void> cancelRecording() async {
+  /// Cancels the recorder. Pass `deleteFile: false` when an upload may still
+  /// be reading the recording — deleting it would kill the upload mid-flight.
+  static Future<void> cancelRecording({bool deleteFile = true}) async {
     await _recorder.cancel();
-    if (_currentPath != null) {
+    if (deleteFile && _currentPath != null) {
       final file = File(_currentPath!);
       if (await file.exists()) await file.delete();
     }
+  }
+
+  /// Deletes the recording file left after a successful background upload.
+  static Future<void> deletePendingFile() async {
+    if (_currentPath == null) return;
+    final file = File(_currentPath!);
+    if (await file.exists()) await file.delete();
   }
 
   static void dispose() {

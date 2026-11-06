@@ -44,13 +44,22 @@ def _build_prompt(transcripts: list) -> str:
     return f"""Here are all conversations recorded today:
 {combined}
 
-Create a clean end-of-day digest with:
-- A one line overview of the day
-- Key topics discussed
-- Important decisions or action items mentioned
-- People talked to (if identifiable)
+Write a clear daily recap in this exact format:
+Line 1: a direct, specific title of 3-6 words about what actually happened.
+Do not start the title with "Today's recap", "Today's conversations", "The day",
+"A day", "Overview", or "Summary".
+Blank line.
+One paragraph of 2-3 complete sentences summarizing the main event with useful context.
+Blank line.
+Two short paragraphs covering other topics, decisions, commitments, follow-ups, and any
+notable people or places when the transcript supports them.
+Attribute statements to speakers only when the transcript supports it.
 
-Keep it concise, clear and useful."""
+Use plain text with normal punctuation. End every sentence with a period, question mark,
+or exclamation mark. Do not use markdown, bullet points, or section labels.
+Do not explain what the digest is. Do not write filler like "This digest provides"
+or "This summary highlights". Avoid repeating the title or the same fact in multiple
+paragraphs. Aim for 120-180 words when there is enough conversation content."""
 
 def summarize(transcripts: list) -> str:
     if not transcripts:

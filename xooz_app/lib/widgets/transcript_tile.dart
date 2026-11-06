@@ -41,7 +41,7 @@ class TranscriptTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    transcript.shortText,
+                    transcript.displayTitle,
                     style: const TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 15,
@@ -64,8 +64,6 @@ class TranscriptTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.more_vert, color: AppColors.homeMuted, size: 22),
           ],
         ),
       ),

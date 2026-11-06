@@ -1,0 +1,10 @@
+# Install with: venv\Scripts\pip install -r requirements.txt
+fastapi
+uvicorn
+supabase
+httpx
+python-dotenv
+assemblyai
+openai
+anthropic
+tzdata ; sys_platform == "win32"

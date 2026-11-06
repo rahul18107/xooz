@@ -5,7 +5,7 @@ aai.settings.api_key = ASSEMBLYAI_API_KEY
 
 def transcribe(audio_file_path: str) -> dict:
     config = aai.TranscriptionConfig(
-        speech_model=aai.SpeechModel.universal,
+        speech_models=["universal-3-5-pro"],
         speaker_labels=True,
     )
 

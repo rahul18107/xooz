@@ -1,9 +1,9 @@
 from supabase import create_client
-from src.config import SUPABASE_URL, SUPABASE_KEY
+from src.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-client = create_client(SUPABASE_URL, SUPABASE_KEY)
+client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ------------------------------------------------------------------
 # time helpers (local "today" aware of the user's timezone)
@@ -38,6 +38,13 @@ def today_bounds_utc(user_id: str) -> tuple[str, str]:
 def today_local_date(user_id: str) -> str:
     tz = get_profile_tz(user_id)
     return datetime.now(tz).date().isoformat()
+
+def day_bounds_utc(user_id: str, date: str) -> tuple[str, str]:
+    """[start, end) of the given local day ('YYYY-MM-DD') as UTC ISO strings."""
+    tz = get_profile_tz(user_id)
+    start = datetime.fromisoformat(date).replace(tzinfo=tz)
+    end = start + timedelta(days=1)
+    return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
 
 def month_bounds_utc(user_id: str, month: str) -> tuple[str, str]:
     """month = 'YYYY-MM' -> [start, end) of that local month as UTC ISO strings."""
@@ -121,6 +128,10 @@ def get_transcript_by_id(transcript_id: str):
         .execute()
     )
     return result.data[0] if result.data else None
+
+def delete_transcript(transcript_id: str):
+    query = client.table("transcripts").delete().eq("id", transcript_id).execute()
+    return (query.data or [None])[0]
 
 def update_transcript(transcript_id: str, updates: dict):
     result = (
