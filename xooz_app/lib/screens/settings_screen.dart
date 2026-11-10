@@ -36,6 +36,169 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _editVocabulary() async {
+    final controller = TextEditingController(
+      text: (_profile?.transcriptionVocabulary ?? []).join('\n'),
+    );
+    String? validationError;
+    final terms = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text(
+            'Vocabulary',
+            style: TextStyle(color: AppColors.ink),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                maxLines: 8,
+                minLines: 5,
+                style: const TextStyle(color: AppColors.ink),
+                decoration: const InputDecoration(
+                  hintText: 'One name or term per line',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (validationError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    validationError!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final values = controller.text
+                    .split('\n')
+                    .map((term) => term.trim())
+                    .where((term) => term.isNotEmpty)
+                    .toSet()
+                    .toList();
+                if (values.length > 200 ||
+                    values.any(
+                      (term) =>
+                          term.length > 50 ||
+                          term.split(RegExp(r'\s+')).length > 6,
+                    )) {
+                  updateDialog(
+                    () => validationError =
+                        'Use up to 200 terms, each at most 50 characters and 6 words.',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, values);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    if (terms == null || !mounted) return;
+    try {
+      final profile = await ApiService.updateTranscriptionVocabulary(terms);
+      if (!mounted) return;
+      setState(() => _profile = profile);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Vocabulary saved')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save vocabulary')),
+      );
+    }
+  }
+
+  Future<void> _editDailyRecapSchedule() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final timezoneController = TextEditingController(text: profile.timezone);
+    var enabled = profile.dailyRecapEnabled;
+    var hour = profile.dailyRecapHour;
+    final choice = await showDialog<({bool enabled, int hour, String timezone})>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Daily recap', style: TextStyle(color: AppColors.ink)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  title: const Text('Automatic recap', style: TextStyle(color: AppColors.ink)),
+                  value: enabled,
+                  onChanged: (value) => updateDialog(() => enabled = value),
+                ),
+                DropdownButtonFormField<int>(
+                  initialValue: hour,
+                  decoration: const InputDecoration(labelText: 'Local hour'),
+                  items: [for (var h = 0; h < 24; h++)
+                    DropdownMenuItem(value: h, child: Text('${h.toString().padLeft(2, '0')}:00'))],
+                  onChanged: (value) => updateDialog(() => hour = value ?? hour),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: timezoneController,
+                  style: const TextStyle(color: AppColors.ink),
+                  decoration: const InputDecoration(
+                    labelText: 'Timezone',
+                    hintText: 'Asia/Kolkata',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, (
+                enabled: enabled,
+                hour: hour,
+                timezone: timezoneController.text.trim(),
+              )),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    timezoneController.dispose();
+    if (choice == null || !mounted) return;
+    try {
+      final saved = await ApiService.updateDailyRecapSchedule(
+        enabled: choice.enabled,
+        hour: choice.hour,
+        timezone: choice.timezone,
+      );
+      if (!mounted) return;
+      setState(() => _profile = saved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Daily recap schedule saved')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not save daily recap schedule')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -81,7 +244,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _SettingsItem(
                       icon: Icons.mic_outlined,
                       title: 'Recording & Transcription',
+                      subtitle: 'Vocabulary',
                       iconColor: AppColors.ink,
+                      onTap: _editVocabulary,
                     ),
                     _SettingsItem(
                       icon: Icons.volume_up_outlined,
@@ -91,7 +256,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _SettingsItem(
                       icon: Icons.notifications_outlined,
                       title: 'Notifications & Display',
+                      subtitle: _profile?.dailyRecapEnabled == true
+                          ? 'Daily recap at ${_profile!.dailyRecapHour.toString().padLeft(2, '0')}:00'
+                          : 'Daily recap off',
                       iconColor: AppColors.ink,
+                      onTap: _editDailyRecapSchedule,
                     ),
                     _SettingsItem(
                       icon: Icons.account_tree_outlined,
@@ -261,7 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildSettingsRow(_SettingsItem item) {
     return GestureDetector(
-      onTap: () {},
+      onTap: item.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
@@ -340,6 +509,7 @@ class _SettingsItem {
   final Color iconColor;
   final String? badge;
   final Color? badgeColor;
+  final VoidCallback? onTap;
 
   _SettingsItem({
     required this.icon,
@@ -348,5 +518,6 @@ class _SettingsItem {
     required this.iconColor,
     this.badge,
     this.badgeColor,
+    this.onTap,
   });
 }

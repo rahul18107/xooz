@@ -1,9 +1,11 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/transcript.dart';
 import '../services/api_service.dart';
 import '../widgets/audio_player_bar.dart';
+import '../services/audio_export.dart';
 import 'chat_screen.dart';
 
 class TranscriptScreen extends StatefulWidget {
@@ -24,6 +26,8 @@ class _TranscriptScreenState extends State<TranscriptScreen>
   final ValueNotifier<bool> _playerVisible = ValueNotifier<bool>(false);
 
   bool _generating = false;
+  bool _savingSpeakerName = false;
+  int _summaryVersion = 0;
   String? _error;
 
   final GlobalKey _menuButtonKey = GlobalKey();
@@ -33,6 +37,7 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     super.initState();
     transcript = widget.transcript;
     _tabController = TabController(length: 2, vsync: this);
+    _loadLatestTranscript();
     // summary loads by default — no button needed
     if (!_hasSummary) _generateSummary();
   }
@@ -48,8 +53,21 @@ class _TranscriptScreenState extends State<TranscriptScreen>
 
   bool get _hasSummary => _summaryText.trim().isNotEmpty;
 
+  Future<void> _loadLatestTranscript() async {
+    final version = _summaryVersion;
+    try {
+      final latest = await ApiService.getTranscript(transcript.id);
+      if (mounted && version == _summaryVersion) {
+        setState(() => transcript = latest);
+      }
+    } catch (_) {
+      // Keep the transcript passed by the previous screen when offline.
+    }
+  }
+
   Future<void> _generateSummary() async {
-    if (_generating) return;
+    if (_generating || _savingSpeakerName) return;
+    final version = _summaryVersion;
     setState(() {
       _generating = true;
       _error = null;
@@ -57,21 +75,22 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     try {
       final result = await ApiService.generateSummary(transcript.id);
       if (!mounted) return;
+      if (version != _summaryVersion) {
+        setState(() => _generating = false);
+        if (!_hasSummary) _generateSummary();
+        return;
+      }
       setState(() {
-        transcript = Transcript(
-          id: transcript.id,
-          userId: transcript.userId,
-          text: transcript.text,
-          speakerLabels: transcript.speakerLabels,
-          recordedAt: transcript.recordedAt,
-          audioUrl: transcript.audioUrl,
-          title: result.title,
-          summary: result.summary,
-        );
+        transcript = transcript.copyWith(title: result.title, summary: result.summary);
         _generating = false;
       });
     } catch (e) {
       if (!mounted) return;
+      if (version != _summaryVersion) {
+        setState(() => _generating = false);
+        if (!_hasSummary) _generateSummary();
+        return;
+      }
       setState(() {
         _generating = false;
         _error = e.toString().replaceFirst(RegExp(r'^ApiException:\s*'), '');
@@ -93,6 +112,53 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     }
   }
 
+  Future<void> _editSpeakerName(String label) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _SpeakerNameDialog(
+        label: label,
+        initialName: transcript.speakerNames[label] ?? '',
+      ),
+    );
+    if (!mounted || _savingSpeakerName || name == null || name == (transcript.speakerNames[label] ?? '')) return;
+    final previous = transcript;
+    final names = Map<String, String>.from(transcript.speakerNames);
+    if (name.isEmpty) {
+      names.remove(label);
+    } else {
+      names[label] = name;
+    }
+    setState(() {
+      transcript = transcript.copyWith(speakerNames: names, clearSummary: true);
+      _summaryVersion++;
+      _savingSpeakerName = true;
+    });
+    try {
+      final updated = await ApiService.setSpeakerName(transcript.id, names);
+      if (!mounted) return;
+      if (updated.speakerNames[label] != (name.isEmpty ? null : name)) {
+        throw StateError('Server did not return the saved speaker name');
+      }
+      setState(() {
+        transcript = updated;
+        _savingSpeakerName = false;
+      });
+      _generateSummary();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        transcript = previous;
+        _summaryVersion++;
+        _savingSpeakerName = false;
+      });
+      final migrationMissing = error.toString().contains('speaker_names') &&
+          (error.toString().contains('column') || error.toString().contains('schema'));
+      _showSnackBar(migrationMissing
+          ? 'Run database migration 007, then try again'
+          : 'Couldn\'t update speaker name: $error');
+    }
+  }
+
   Future<void> _showActionsMenu() async {
     final button = _menuButtonKey.currentContext!.findRenderObject() as RenderBox;
     final rect =
@@ -100,7 +166,10 @@ class _TranscriptScreenState extends State<TranscriptScreen>
 
     final action = await Navigator.push<String>(
       context,
-      _AnchorMenuRoute(anchorRect: rect),
+      _AnchorMenuRoute(
+        anchorRect: rect,
+        hasAudio: (transcript.audioUrl ?? '').isNotEmpty,
+      ),
     );
 
     if (!mounted || action == null) return;
@@ -113,8 +182,58 @@ class _TranscriptScreenState extends State<TranscriptScreen>
         _hasSummary
             ? _copyToClipboard(_summaryText, 'Summary copied')
             : _showSnackBar('No summary yet');
+      case 'export-audio':
+        _exportAudio();
       case 'delete':
         _confirmDelete();
+    }
+  }
+
+  /// Converts the stored recording to a real .mp3 and opens the
+  /// system share sheet so the user can save it anywhere (Files, WhatsApp…).
+  Future<void> _exportAudio() async {
+    final url = transcript.audioUrl;
+    if (url == null || url.isEmpty) {
+      _showSnackBar('No audio recorded');
+      return;
+    }
+
+    // progress dialog — conversion takes a moment on longer recordings
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(24)),
+        ),
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.accent),
+            SizedBox(width: 20),
+            Expanded(
+              child: Text(
+                'Preparing .mp3…',
+                style: TextStyle(fontFamily: 'Inter', fontSize: 15, color: AppColors.ink),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final file = await AudioExportService.exportToMp3(
+        url: url,
+        fileName: transcript.displayTitle,
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close progress
+      await SharePlus.instance.share(ShareParams(files: [file], text: transcript.displayTitle));
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close progress
+      _showSnackBar("Couldn't export the audio");
     }
   }
 
@@ -230,15 +349,19 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     }
   }
 
-  void _showSnackBar(String message) {
+  void _showSnackBar(String message, {bool light = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+          style: TextStyle(
+            fontFamily: 'Inter',
+            fontSize: 14,
+            color: light ? AppColors.ink : Colors.white,
+          ),
         ),
-        backgroundColor: AppColors.ink,
+        backgroundColor: light ? AppColors.surface : AppColors.ink,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
@@ -485,7 +608,7 @@ class _TranscriptScreenState extends State<TranscriptScreen>
   // ---------------- Summary tab ----------------
 
   Widget _buildSummaryTab() {
-    if (_generating) {
+    if (_generating || _savingSpeakerName) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(32),
@@ -493,13 +616,13 @@ class _TranscriptScreenState extends State<TranscriptScreen>
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(28),
         ),
-        child: const Column(
+        child: Column(
           children: [
-            CircularProgressIndicator(color: AppColors.accent),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(color: AppColors.accent),
+            const SizedBox(height: 16),
             Text(
-              'Generating summary...',
-              style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppColors.muted),
+              _savingSpeakerName ? 'Saving speaker name...' : 'Generating summary...',
+              style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppColors.muted),
             ),
           ],
         ),
@@ -713,13 +836,26 @@ class _TranscriptScreenState extends State<TranscriptScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Speaker ${utterance['speaker']}',
-                  style: const TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.accent,
+                InkWell(
+                  onTap: () => _editSpeakerName('${utterance['speaker']}'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(child: Text(
+                          transcript.speakerDisplayName('${utterance['speaker']}'),
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
+                          ),
+                        )),
+                        const SizedBox(width: 5),
+                        const Icon(Icons.edit_outlined, size: 12, color: AppColors.accent),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -741,13 +877,74 @@ class _TranscriptScreenState extends State<TranscriptScreen>
   }
 }
 
+class _SpeakerNameDialog extends StatefulWidget {
+  final String label;
+  final String initialName;
+
+  const _SpeakerNameDialog({required this.label, required this.initialName});
+
+  @override
+  State<_SpeakerNameDialog> createState() => _SpeakerNameDialogState();
+}
+
+class _SpeakerNameDialogState extends State<_SpeakerNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Text(
+        'Name Speaker ${widget.label}',
+        style: const TextStyle(fontFamily: 'Inter', color: AppColors.ink),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 80,
+        textCapitalization: TextCapitalization.words,
+        style: const TextStyle(fontFamily: 'Inter', fontSize: 15, color: AppColors.ink),
+        decoration: const InputDecoration(
+          hintText: 'Speaker name',
+          hintStyle: TextStyle(color: AppColors.muted),
+          counterStyle: TextStyle(color: AppColors.muted),
+        ),
+        onSubmitted: (_) => Navigator.pop(context, _controller.text.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
+          child: const Text('Save', style: TextStyle(color: AppColors.accent)),
+        ),
+      ],
+    );
+  }
+}
+
 /// The 3-dot dropdown as its own route so opening/closing is a smooth
 /// scale + fade that pops out of the menu's top-left corner — anchored
 /// right under the 3-dot button.
 class _AnchorMenuRoute extends PopupRoute<String> {
   final Rect anchorRect;
+  final bool hasAudio;
 
-  _AnchorMenuRoute({required this.anchorRect});
+  _AnchorMenuRoute({required this.anchorRect, this.hasAudio = false});
 
   static const _menuWidth = 200.0;
   // 4 items x 50 + 3 hairline dividers, approximated for clamping
@@ -824,6 +1021,15 @@ class _AnchorMenuRoute extends PopupRoute<String> {
                       Icons.summarize_outlined,
                       'Copy summary',
                     ),
+                    if (hasAudio) ...[
+                      _hairline(),
+                      _menuItem(
+                        context,
+                        'export-audio',
+                        Icons.file_download_outlined,
+                        'Export audio',
+                      ),
+                    ],
                     _hairline(),
                     _menuItem(
                       context,

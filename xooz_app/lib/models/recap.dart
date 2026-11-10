@@ -4,20 +4,30 @@ class Recap {
   final String title;
   final String quickSummary;
   final String detailedSummary;
+  final bool isUnavailable;
   final int recordingCount;
   final double minutes;
   final int taskCount;
   final List<RecapEntry> recordings;
+  final List<RecapEntry> sourceRecordings;
+  final List<RecapFact> actionItems;
+  final List<RecapFact> decisions;
+  final List<RecapFact> unresolvedQuestions;
 
   Recap({
     required this.date,
     required this.title,
     required this.quickSummary,
     required this.detailedSummary,
+    this.isUnavailable = false,
     required this.recordingCount,
     required this.minutes,
     required this.taskCount,
     required this.recordings,
+    required this.sourceRecordings,
+    this.actionItems = const [],
+    this.decisions = const [],
+    this.unresolvedQuestions = const [],
   });
 
   factory Recap.fromJson(Map<String, dynamic> json) {
@@ -30,16 +40,32 @@ class Recap {
         .toList();
     final summary = ((json['digest'] ?? '') as String).trim();
     final parts = parseDigest(summary);
+    final unavailable = json['recap_status'] == 'unavailable' || json['recap_status'] == 'preview';
+    final structured = json['structured_summary'] is Map<String, dynamic>
+        ? json['structured_summary'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    List<RecapFact> facts(String key) => (structured[key] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(RecapFact.fromJson)
+        .toList();
 
     return Recap(
       date: date,
-      title: parts.$1,
-      quickSummary: parts.$2,
-      detailedSummary: parts.$3,
+      title: unavailable ? 'Daily recap' : parts.$1,
+      quickSummary: unavailable ? '' : parts.$2,
+      detailedSummary: unavailable ? '' : parts.$3,
+      isUnavailable: unavailable,
       recordingCount: (stats['recordings'] as num?)?.toInt() ?? 0,
       minutes: (stats['minutes'] as num?)?.toDouble() ?? 0.0,
       taskCount: (stats['tasks'] as num?)?.toInt() ?? 0,
       recordings: recordings,
+      sourceRecordings: (json['source_recordings'] as List? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((t) => RecapEntry.fromJson(t))
+          .toList(),
+      actionItems: unavailable ? const [] : facts('action_items'),
+      decisions: unavailable ? const [] : facts('decisions'),
+      unresolvedQuestions: unavailable ? const [] : facts('unresolved_questions'),
     );
   }
 
@@ -148,6 +174,9 @@ class Recap {
     );
     final parsedTitle = _shortTitle(title);
     title = parsedTitle == 'Daily recap' && listTitle.isNotEmpty ? listTitle : parsedTitle;
+    if (title.toLowerCase() == 'recorded conversations' && afterTitle.isNotEmpty) {
+      title = _shortTitle(afterTitle.first);
+    }
 
     final sentences = <String>[];
     for (final line in afterTitle) {
@@ -195,6 +224,20 @@ class Recap {
     if (minutes < 1) return '${(minutes * 60).round()}s';
     return '${minutes.round()}m';
   }
+}
+
+class RecapFact {
+  final String text;
+  final String recordingId;
+  final String? taskId;
+
+  const RecapFact({required this.text, required this.recordingId, this.taskId});
+
+  factory RecapFact.fromJson(Map<String, dynamic> json) => RecapFact(
+        text: (json['text'] ?? '').toString(),
+        recordingId: (json['recording_id'] ?? '').toString(),
+        taskId: json['task_id']?.toString(),
+      );
 }
 
 class RecapEntry {

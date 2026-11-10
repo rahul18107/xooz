@@ -1,8 +1,13 @@
 class ChatReply {
   final String sessionId;
   final String reply;
+  final List<String> sourceIds;
 
-  ChatReply({required this.sessionId, required this.reply});
+  ChatReply({
+    required this.sessionId,
+    required this.reply,
+    this.sourceIds = const [],
+  });
 }
 
 class ProfileInfo {
@@ -11,6 +16,9 @@ class ProfileInfo {
   final String? email;
   final String plan;
   final String timezone;
+  final bool dailyRecapEnabled;
+  final int dailyRecapHour;
+  final List<String> transcriptionVocabulary;
 
   ProfileInfo({
     required this.id,
@@ -18,6 +26,9 @@ class ProfileInfo {
     required this.email,
     required this.plan,
     required this.timezone,
+    this.dailyRecapEnabled = false,
+    this.dailyRecapHour = 21,
+    this.transcriptionVocabulary = const [],
   });
 
   factory ProfileInfo.fromJson(Map<String, dynamic> json) {
@@ -27,6 +38,11 @@ class ProfileInfo {
       email: json['email'],
       plan: json['plan'] ?? 'free',
       timezone: json['timezone'] ?? 'UTC',
+      dailyRecapEnabled: json['daily_recap_enabled'] == true,
+      dailyRecapHour: (json['daily_recap_hour'] as num?)?.toInt() ?? 21,
+      transcriptionVocabulary: (json['transcription_vocabulary'] as List? ?? [])
+          .whereType<String>()
+          .toList(),
     );
   }
 }
@@ -70,8 +86,7 @@ class SearchResults {
     required this.tasks,
   });
 
-  bool get isEmpty =>
-      transcripts.isEmpty && digests.isEmpty && tasks.isEmpty;
+  bool get isEmpty => transcripts.isEmpty && digests.isEmpty && tasks.isEmpty;
 
   int get totalCount => transcripts.length + digests.length + tasks.length;
 }
@@ -88,4 +103,17 @@ class ActivityFeed {
       today: json['today'] ?? [],
     );
   }
+}
+class ChatThread {
+  final String sessionId;
+  final String title;
+  final DateTime updatedAt;
+
+  const ChatThread({required this.sessionId, required this.title, required this.updatedAt});
+
+  factory ChatThread.fromJson(Map<String, dynamic> json) => ChatThread(
+        sessionId: json['session_id'] as String,
+        title: json['title'] as String? ?? 'Chat',
+        updatedAt: DateTime.parse(json['updated_at'] as String).toLocal(),
+      );
 }

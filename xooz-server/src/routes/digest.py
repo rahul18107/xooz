@@ -1,16 +1,57 @@
 from fastapi import APIRouter, HTTPException
+import hashlib
+import json
+from datetime import datetime, timezone
 from src.services.database import (
-    get_transcripts_for_today,
-    get_transcripts,
+    get_day_transcripts,
     get_tasks,
     save_digest,
     get_digest,
     get_digests,
+    delete_digest,
+    update_digest,
     today_local_date,
     day_bounds_utc,
 )
 
 router = APIRouter()
+
+
+def _completed(transcripts: list) -> list:
+    return [t for t in transcripts if t.get("status") == "completed" and (t.get("text") or "").strip()]
+
+
+def _fingerprint(transcripts: list) -> str:
+    inputs = [{"id": t["id"], "text": t.get("text"),
+               "speaker_labels": t.get("speaker_labels"),
+               "speaker_names": t.get("speaker_names")}
+              for t in sorted(transcripts, key=lambda t: t["id"])]
+    return hashlib.sha256(("grounded-v4:" + json.dumps(inputs, sort_keys=True)).encode()).hexdigest()
+
+
+def _current_digest(user_id: str, date: str, transcripts: list, force: bool = False):
+    completed = _completed(transcripts)
+    existing = get_digest(user_id=user_id, date=date)
+    if not completed:
+        return None, False
+    fingerprint = _fingerprint(completed)
+    if existing and not force and existing.get("source_fingerprint") == fingerprint:
+        return existing, True
+    retry_bucket = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    fallback_fingerprint = f"fallback:{fingerprint}:{retry_bucket}"
+    if (existing and not force and existing.get("source_fingerprint") == fallback_fingerprint
+            and not existing.get("summary")):
+        return existing, True
+    from src.services.summarization import summarize_structured_with_status
+    summary, structured, is_fallback = summarize_structured_with_status(completed)
+    source_ids = [t["id"] for t in completed]
+    stored_fingerprint = fallback_fingerprint if is_fallback else fingerprint
+    summary = "" if is_fallback else (summary or "")
+    if existing:
+        return update_digest(user_id, date, summary, source_ids, stored_fingerprint,
+                             None if is_fallback else structured), False
+    return save_digest(user_id, summary, date, source_ids, stored_fingerprint,
+                       None if is_fallback else structured), False
 
 
 def _word_count(value: str) -> int:
@@ -85,7 +126,7 @@ def _conversation_importance_score(transcript: dict, task_counts: dict) -> int:
 
 
 def _select_highlights(transcripts: list, day_tasks: list, limit: int = 5) -> list:
-    completed = [t for t in transcripts if t.get("status") == "completed"]
+    completed = _completed(transcripts)
     if not completed:
         return []
 
@@ -116,25 +157,17 @@ def _select_highlights(transcripts: list, day_tasks: list, limit: int = 5) -> li
 
 
 @router.get("/recap/{user_id}")
-async def get_recap(user_id: str, date: str = None):
+async def get_recap(user_id: str, date: str = None, force: bool = False):
     """Everything the Daily Recap screen needs for one day:
     digest text + that day's recordings + stats."""
     try:
         date = date or today_local_date(user_id)
 
         # digest for the day — generate fresh for today if it doesn't exist yet
-        digest = get_digest(user_id=user_id, date=date)
-        if not digest and date == today_local_date(user_id):
-            day_transcripts = get_transcripts_for_today(user_id=user_id)
-            if day_transcripts:
-                from src.services.summarization import summarize
-                summary = summarize(day_transcripts)
-                digest = save_digest(user_id=user_id, summary=summary)
+        transcripts = get_day_transcripts(user_id=user_id, date=date)
+        digest, _ = _current_digest(user_id, date, transcripts, force=force)
 
-        # the day's recordings (recap is read-only, list limit is fine)
-        transcripts = get_transcripts(user_id=user_id, date=date, limit=200)
-
-        completed = [t for t in transcripts if t.get("status") == "completed"]
+        completed = _completed(transcripts)
         seconds = sum(_recording_seconds(t) for t in completed)
         minutes = round(seconds / 60.0, 1) if seconds else 0.0
 
@@ -152,10 +185,26 @@ async def get_recap(user_id: str, date: str = None):
         except Exception:
             day_tasks = []
 
+        structured_summary = dict((digest or {}).get("structured_summary") or {})
+        # Saved tasks are the canonical action items; the model's phrasing may
+        # not correspond to any task the user can actually open.
+        structured_summary["action_items"] = [
+            {"text": task["title"], "recording_id": task["source_transcript_id"],
+             "task_id": task["id"]}
+            for task in day_tasks
+            if task.get("id") and task.get("title")
+            and task.get("source_transcript_id") in {t["id"] for t in completed}
+        ]
+
         return {
             "success": True,
             "date": date,
-            "digest": (digest or {}).get("summary"),
+            "digest": ((digest or {}).get("summary") or "") if not ((digest or {}).get("source_fingerprint") or "").startswith("fallback:") else "",
+            "structured_summary": structured_summary,
+            "recap_status": ("unavailable" if ((digest or {}).get("source_fingerprint") or "").startswith("fallback:")
+                             else "ready" if digest else "empty"),
+            "source_recordings": [t for t in transcripts if t.get("id") in
+                                  ((digest or {}).get("source_transcript_ids") or [])],
             "stats": {
                 "recordings": len(completed),
                 "minutes": minutes,
@@ -168,48 +217,47 @@ async def get_recap(user_id: str, date: str = None):
 
 @router.get("/digest/{user_id}")
 async def get_daily_digest(user_id: str, date: str = None):
-    # check if digest already exists for the requested day
-    existing = get_digest(user_id=user_id, date=date)
-    if existing:
-        return {
-            "success": True,
-            "digest": existing["summary"],
-            "date": existing["date"],
-            "cached": True
-        }
-
-    # if asking for an older day that has no digest, don't backfill automatically
-    if date and date != today_local_date(user_id):
+    date = date or today_local_date(user_id)
+    transcripts = get_day_transcripts(user_id=user_id, date=date)
+    digest, cached = _current_digest(user_id, date, transcripts)
+    if not digest:
         return {
             "success": True,
             "digest": "No conversations recorded on this day.",
             "date": date,
             "cached": False
         }
-
-    # fetch today's transcripts and generate the digest
-    transcripts = get_transcripts_for_today(user_id=user_id)
-    if not transcripts:
-        return {
-            "success": True,
-            "digest": "No conversations recorded today.",
-            "date": today_local_date(user_id),
-            "cached": False
-        }
-
-    # summarize
-    from src.services.summarization import summarize
-    summary = summarize(transcripts)
-
-    # save digest
-    digest = save_digest(user_id=user_id, summary=summary)
-
+    unavailable = (digest.get("source_fingerprint") or "").startswith("fallback:")
     return {
         "success": True,
-        "digest": digest["summary"],
+        "digest": "Daily summary unavailable. Try again later." if unavailable else digest["summary"],
         "date": digest["date"],
-        "cached": False
+        "cached": cached
     }
+
+
+@router.post("/digest/{user_id}")
+async def generate_daily_digest(user_id: str, date: str = None):
+    date = date or today_local_date(user_id)
+    try:
+        transcripts = get_day_transcripts(user_id=user_id, date=date)
+        digest, cached = _current_digest(user_id, date, transcripts, force=True)
+        if not digest:
+            raise HTTPException(status_code=404, detail="No conversations recorded on this day")
+
+        unavailable = (digest.get("source_fingerprint") or "").startswith("fallback:")
+        if unavailable:
+            raise HTTPException(status_code=503, detail="Daily summary unavailable. Please try again.")
+        return {
+            "success": True,
+            "digest": digest["summary"],
+            "date": digest["date"],
+            "cached": cached,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/digests/{user_id}")
 async def list_digests(user_id: str, month: str = None, limit: int = 60):
@@ -219,6 +267,23 @@ async def list_digests(user_id: str, month: str = None, limit: int = 60):
         raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
     try:
         digests = get_digests(user_id=user_id, month=month, limit=limit)
+        digests = [digest for digest in digests
+                   if digest.get("summary") and not (digest.get("source_fingerprint") or "").startswith("fallback:")]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"success": True, "digests": digests, "count": len(digests)}
+
+
+@router.delete("/digests/{user_id}")
+async def remove_digest(user_id: str, date: str):
+    if not date:
+        raise HTTPException(status_code=400, detail="date is required")
+    try:
+        deleted = delete_digest(user_id=user_id, date=date)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Digest not found")
+        return {"success": True, "digest": deleted}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,5 +1,6 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../services/audio_service.dart';
@@ -23,7 +24,6 @@ class _RecordingScreenState extends State<RecordingScreen>
   Duration _duration = Duration.zero;
   Timer? _timer;
   late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
   String? _statusMessage;
 
   @override
@@ -31,11 +31,8 @@ class _RecordingScreenState extends State<RecordingScreen>
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 1),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+      duration: const Duration(seconds: 20),
+    )..repeat();
     _startRecording();
   }
 
@@ -129,8 +126,9 @@ class _RecordingScreenState extends State<RecordingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final blobSize = math.min(MediaQuery.sizeOf(context).width - 48, 300.0);
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF2F2F2),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -162,24 +160,36 @@ class _RecordingScreenState extends State<RecordingScreen>
               ),
               const Spacer(),
               if (_isRecording)
-                ScaleTransition(
-                  scale: _pulseAnimation,
-                  child: CustomPaint(
-                    foregroundPainter: _RecordingDialPainter(),
-                    child: Container(
-                      width: 180,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        border: const Border.fromBorderSide(
-                          BorderSide(color: AppColors.homeBorder),
+                SizedBox.square(
+                  dimension: blobSize,
+                  child: AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) => CustomPaint(
+                      painter: _RecordingBlobPainter(_pulseController.value),
+                      child: Center(
+                        child: Transform.scale(
+                          scale:
+                              1 +
+                              0.035 *
+                                  math.sin(
+                                    _pulseController.value * 10 * math.pi,
+                                  ),
+                          child: child,
                         ),
-                        borderRadius: BorderRadius.circular(90),
                       ),
-                      child: const Icon(
-                        Icons.mic_none_rounded,
-                        color: AppColors.ink,
-                        size: 60,
+                    ),
+                    child: ColorFiltered(
+                      colorFilter: ColorFilter.mode(
+                        Colors.white,
+                        BlendMode.srcIn,
+                      ),
+                      child: Lottie.asset(
+                        'assets/animations/microphone.json',
+                        width: 44,
+                        height: 44,
+                        fit: BoxFit.contain,
+                        repeat: true,
+                        animate: true,
                       ),
                     ),
                   ),
@@ -198,7 +208,7 @@ class _RecordingScreenState extends State<RecordingScreen>
                 ),
               const SizedBox(height: 12),
               Text(
-                _statusMessage ?? (_isRecording ? 'Recording...' : ''),
+                _statusMessage ?? (_isRecording ? 'Listening...' : ''),
                 style: const TextStyle(
                   fontFamily: 'Inter',
                   fontSize: 14,
@@ -232,28 +242,53 @@ class _RecordingScreenState extends State<RecordingScreen>
   }
 }
 
-class _RecordingDialPainter extends CustomPainter {
+class _RecordingBlobPainter extends CustomPainter {
+  final double progress;
+
+  const _RecordingBlobPainter(this.progress);
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = size.center(Offset.zero);
-    final radius = size.shortestSide / 2;
-    final paint = Paint()
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    for (var tick = 0; tick < 48; tick++) {
-      final angle = tick * math.pi / 24 - math.pi / 2;
-      final direction = Offset(math.cos(angle), math.sin(angle));
-      paint.color = tick >= 28 && tick <= 38
-          ? AppColors.accent
-          : AppColors.raised;
-      canvas.drawLine(
-        center + direction * (radius - 12),
-        center + direction * (radius - 4),
-        paint,
-      );
+    final unit = size.shortestSide / 264;
+    final time = progress * 10 * math.pi;
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(progress * 2 * math.pi);
+    canvas.translate(-center.dx, -center.dy);
+    Path blobPath(double spread) {
+      final path = Path();
+      const steps = 180;
+      for (var i = 0; i <= steps; i++) {
+        final angle = i * 2 * math.pi / steps;
+        final scallop = math.cos(9 * angle + 0.2 + 0.12 * math.sin(time));
+        final breath = 7.0 * math.sin(time + 0.2);
+        final morph = 1.2 * math.sin(4 * angle - time + 0.2);
+        final radius = (95.0 + 5.0 * scallop + breath + morph + spread) * unit;
+        final point =
+            center + Offset(math.cos(angle), math.sin(angle)) * radius;
+        if (i == 0) {
+          path.moveTo(point.dx, point.dy);
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
+      }
+      path.close();
+      return path;
     }
+
+    final rippleProgress = (progress * 5) % 1;
+    final spread = 24.0 * Curves.easeOutCubic.transform(rippleProgress);
+    final fade = (1 - rippleProgress) * (1 - rippleProgress);
+    canvas.drawPath(
+      blobPath(spread),
+      Paint()..color = const Color(0xFFAAAAAA).withValues(alpha: 0.8 * fade),
+    );
+    canvas.drawPath(blobPath(0), Paint()..color = const Color(0xFF151515));
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _RecordingDialPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _RecordingBlobPainter oldDelegate) =>
+      progress != oldDelegate.progress;
 }

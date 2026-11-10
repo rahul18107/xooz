@@ -2,7 +2,9 @@ class Transcript {
   final String id;
   final String userId;
   final String text;
+  final String status;
   final List<Map<String, dynamic>> speakerLabels;
+  final Map<String, String> speakerNames;
   final DateTime recordedAt;
   final String? summary;
   final String? title;
@@ -13,7 +15,9 @@ class Transcript {
     required this.id,
     required this.userId,
     required this.text,
+    this.status = 'completed',
     required this.speakerLabels,
+    this.speakerNames = const {},
     required this.recordedAt,
     this.summary,
     this.title,
@@ -26,9 +30,11 @@ class Transcript {
       id: json['id'],
       userId: json['user_id'],
       text: json['text'],
+      status: json['status'] as String? ?? 'completed',
       speakerLabels: List<Map<String, dynamic>>.from(
         json['speaker_labels'] ?? [],
       ),
+      speakerNames: Map<String, String>.from(json['speaker_names'] ?? {}),
       recordedAt: DateTime.parse(json['recorded_at']).toLocal(),
       summary: json['summary'],
       title: json['title'],
@@ -37,19 +43,23 @@ class Transcript {
     );
   }
 
-  Transcript copyWith({String? title, String? summary, bool? starred, String? audioUrl}) {
+  Transcript copyWith({String? title, String? summary, bool? starred, String? audioUrl, Map<String, String>? speakerNames, bool clearSummary = false}) {
     return Transcript(
       id: id,
       userId: userId,
       text: text,
+      status: status,
       speakerLabels: speakerLabels,
+      speakerNames: speakerNames ?? this.speakerNames,
       recordedAt: recordedAt,
       title: title ?? this.title,
-      summary: summary ?? this.summary,
+      summary: clearSummary ? null : summary ?? this.summary,
       starred: starred ?? this.starred,
       audioUrl: audioUrl ?? this.audioUrl,
     );
   }
+
+  String speakerDisplayName(String label) => speakerNames[label] ?? 'Speaker $label';
 
   /// Short one-liner shown as the heading. Prefers the AI-generated title,
   /// falls back to the first sentence of the transcript.

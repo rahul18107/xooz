@@ -194,13 +194,12 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      // timeline
+                      // scrubber
                       Expanded(
-                        child: _DottedTimeline(
-                          fraction: duration > Duration.zero
-                              ? (position.inMilliseconds / duration.inMilliseconds)
-                                    .clamp(0.0, 1.0)
-                              : 0.0,
+                        child: _AudioScrubber(
+                          position: position,
+                          duration: duration,
+                          enabled: _initialized && duration > Duration.zero,
                           onChanged: _seekFraction,
                         ),
                       ),
@@ -236,44 +235,46 @@ class _AudioPlayerBarState extends State<AudioPlayerBar> {
   }
 }
 
-/// Dotted timeline matching the design — tap or drag anywhere on it to seek.
-class _DottedTimeline extends StatelessWidget {
-  final double fraction; // 0..1 how much has played
+/// Clear draggable scrubber for seeking through the recording.
+class _AudioScrubber extends StatelessWidget {
+  final Duration position;
+  final Duration duration;
+  final bool enabled;
   final ValueChanged<double> onChanged;
 
-  const _DottedTimeline({required this.fraction, required this.onChanged});
+  const _AudioScrubber({
+    required this.position,
+    required this.duration,
+    required this.enabled,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final count = (constraints.maxWidth ~/ 10).clamp(10, 30);
-        void seek(Offset local) => onChanged(local.dx / constraints.maxWidth);
+    final max = duration.inMilliseconds <= 0
+        ? 1.0
+        : duration.inMilliseconds.toDouble();
+    final rawValue = position.inMilliseconds
+        .clamp(0, duration.inMilliseconds)
+        .toDouble();
+    final value = rawValue.clamp(0.0, max).toDouble();
 
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (d) => seek(d.localPosition),
-          onHorizontalDragStart: (d) => seek(d.localPosition),
-          onHorizontalDragUpdate: (d) => seek(d.localPosition),
-          child: Row(
-            children: List.generate(count, (i) {
-              final played = (i / count) < fraction;
-              return Expanded(
-                child: Center(
-                  child: Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: played ? AppColors.ink : AppColors.muted,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        );
-      },
+    return SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 4,
+        activeTrackColor: AppColors.ink,
+        inactiveTrackColor: AppColors.homeBorder,
+        thumbColor: AppColors.ink,
+        overlayColor: AppColors.ink.withValues(alpha: 0.10),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+      ),
+      child: Slider(
+        min: 0,
+        max: max,
+        value: value,
+        onChanged: enabled ? (next) => onChanged(next / max) : null,
+      ),
     );
   }
 }

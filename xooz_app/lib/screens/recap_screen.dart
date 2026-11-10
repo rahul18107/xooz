@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/recap.dart';
@@ -8,6 +7,7 @@ import '../services/api_service.dart';
 import 'transcript_screen.dart';
 import 'day_conversations_screen.dart';
 import 'day_tasks_screen.dart';
+import 'conversation_tasks_screen.dart';
 
 /// Daily Recap screen — digest of one day:
 /// title, quick + detailed summary, stats, and highlights.
@@ -24,6 +24,7 @@ class RecapScreen extends StatefulWidget {
 class _RecapScreenState extends State<RecapScreen> {
   Recap? _recap;
   bool _loading = true;
+  bool _sourcesExpanded = false;
   String? _error;
 
   @override
@@ -32,13 +33,13 @@ class _RecapScreenState extends State<RecapScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool force = false}) async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final recap = await ApiService.getRecap(date: widget.date);
+      final recap = await ApiService.getRecap(date: widget.date, force: force);
       if (!mounted) return;
       setState(() {
         _recap = recap;
@@ -87,6 +88,25 @@ class _RecapScreenState extends State<RecapScreen> {
     SharePlus.instance.share(ShareParams(text: text));
   }
 
+  Future<void> _deleteRecap() async {
+    final r = _recap;
+    if (r == null) return;
+
+    try {
+      await ApiService.deleteDigest(r.date);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not delete recap'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -98,7 +118,7 @@ class _RecapScreenState extends State<RecapScreen> {
             ? _buildError()
             : RefreshIndicator(
                 color: AppColors.accent,
-                onRefresh: _load,
+                onRefresh: () => _load(force: true),
                 child: ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
@@ -108,6 +128,7 @@ class _RecapScreenState extends State<RecapScreen> {
                     _buildDateTitle(),
                     const SizedBox(height: 22),
                     _buildSummary(),
+                    _buildSources(),
                     const SizedBox(height: 28),
                     _buildStatsRow(),
                     const SizedBox(height: 36),
@@ -132,7 +153,7 @@ class _RecapScreenState extends State<RecapScreen> {
           ),
           const SizedBox(height: 16),
           GestureDetector(
-            onTap: _load,
+            onTap: () => _load(force: true),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
               decoration: BoxDecoration(
@@ -156,7 +177,12 @@ class _RecapScreenState extends State<RecapScreen> {
   }
 
   Widget _buildTopBar() {
-    Widget circle({IconData? icon, String? emoji, VoidCallback? onTap}) {
+    Widget circle({
+      IconData? icon,
+      String? emoji,
+      VoidCallback? onTap,
+      Color? iconColor,
+    }) {
       return GestureDetector(
         onTap: onTap,
         child: Container(
@@ -173,7 +199,7 @@ class _RecapScreenState extends State<RecapScreen> {
             child: emoji != null
                 ? Text(emoji, style: const TextStyle(fontSize: 18))
                 : icon != null
-                ? Icon(icon, color: AppColors.muted, size: 20)
+                ? Icon(icon, color: iconColor ?? AppColors.muted, size: 20)
                 : null,
           ),
         ),
@@ -187,15 +213,9 @@ class _RecapScreenState extends State<RecapScreen> {
         circle(icon: Icons.share_outlined, onTap: _shareRecap),
         const SizedBox(width: 12),
         circle(
-          icon: Icons.more_horiz,
-          onTap: () {
-            final text =
-                '${_recap!.dateLabel} — ${_recap!.title}\n\n${_recap!.quickSummary}\n\n${_recap!.detailedSummary}'.trim();
-            Clipboard.setData(ClipboardData(text: text));
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Recap copied'), duration: Duration(seconds: 1)),
-            );
-          },
+          icon: Icons.delete_rounded,
+          iconColor: const Color(0xFFAB5463),
+          onTap: _deleteRecap,
         ),
       ],
     );
@@ -241,6 +261,23 @@ class _RecapScreenState extends State<RecapScreen> {
 
   Widget _buildSummary() {
     final r = _recap!;
+    if (r.isUnavailable) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Daily summary is unavailable right now.',
+            style: TextStyle(fontFamily: 'Inter', fontSize: 15, color: AppColors.ink),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => _load(force: true),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Try again'),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -275,7 +312,111 @@ class _RecapScreenState extends State<RecapScreen> {
             ),
           ),
         ],
+        _buildFactSection('Action items', r.actionItems),
+        _buildFactSection('Decisions', r.decisions),
+        _buildFactSection('Open questions', r.unresolvedQuestions),
       ],
+    );
+  }
+
+  Widget _buildFactSection(String title, List<RecapFact> facts) {
+    if (facts.isEmpty) return const SizedBox.shrink();
+    final sources = {for (final entry in _recap!.sourceRecordings) entry.id: entry};
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(
+            fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+          )),
+          const SizedBox(height: 6),
+          for (final fact in facts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: InkWell(
+                onTap: sources[fact.recordingId] == null
+                    ? null
+                    : () {
+                        if (title == 'Action items' && fact.taskId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ConversationTasksScreen(
+                                transcriptId: fact.recordingId,
+                                title: sources[fact.recordingId]!.highlightTitle,
+                                focusTaskId: fact.taskId,
+                              ),
+                            ),
+                          );
+                        } else {
+                          _openTranscript(sources[fact.recordingId]!);
+                        }
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(fact.text, style: const TextStyle(
+                        fontFamily: 'Inter', fontSize: 14, color: AppColors.ink,
+                        height: 1.5,
+                      ))),
+                      if (sources.containsKey(fact.recordingId))
+                        const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.cardMuted),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSources() {
+    final sources = _recap!.sourceRecordings;
+    if (sources.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextButton(
+            onPressed: () => setState(() => _sourcesExpanded = !_sourcesExpanded),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.cardMuted,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(0, 40),
+              alignment: Alignment.centerLeft,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Recordings used', style: TextStyle(fontFamily: 'Inter', fontSize: 13)),
+                const SizedBox(width: 4),
+                Icon(_sourcesExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20),
+              ],
+            ),
+          ),
+          if (_sourcesExpanded)
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final entry in sources)
+                  TextButton.icon(
+                    onPressed: () => _openTranscript(entry),
+                    icon: const Icon(Icons.mic_none_rounded, size: 16),
+                    label: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width - 90),
+                      child: Text(entry.highlightTitle, maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

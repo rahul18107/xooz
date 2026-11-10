@@ -6,7 +6,11 @@ class DigestCard extends StatelessWidget {
   final Digest digest;
   final VoidCallback? onTap;
 
-  const DigestCard({super.key, required this.digest, this.onTap});
+  const DigestCard({
+    super.key,
+    required this.digest,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {

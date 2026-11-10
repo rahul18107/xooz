@@ -16,8 +16,16 @@ class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
 
   @override
-  String toString() =>
-      statusCode != null ? 'ApiException($statusCode): $message' : 'ApiException: $message';
+  String toString() => statusCode != null
+      ? 'ApiException($statusCode): $message'
+      : 'ApiException: $message';
+}
+
+class TranscriptSummary {
+  final String title;
+  final String summary;
+
+  const TranscriptSummary({required this.title, required this.summary});
 }
 
 class ApiService {
@@ -49,25 +57,34 @@ class ApiService {
   static Future<Map<String, dynamic>> _get(String url) =>
       _request(() => http.get(Uri.parse(url)));
 
-  static Future<Map<String, dynamic>> _post(String url, Map<String, dynamic> body) => _request(
-        () => http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(body),
-        ),
-      );
+  static Future<Map<String, dynamic>> _post(
+    String url,
+    Map<String, dynamic> body,
+  ) => _request(
+    () => http.post(
+      Uri.parse(url),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    ),
+  );
 
-  static Future<Map<String, dynamic>> _patch(String url, Map<String, dynamic> body) => _request(
-        () => http.patch(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(body),
-        ),
-      );
+  static Future<Map<String, dynamic>> _patch(
+    String url,
+    Map<String, dynamic> body,
+  ) => _request(
+    () => http.patch(
+      Uri.parse(url),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    ),
+  );
 
   // ---------------- audio ----------------
 
-  static Future<Transcript?> uploadAudio(File audioFile, {Duration? duration}) async {
+  static Future<Transcript?> uploadAudio(
+    File audioFile, {
+    Duration? duration,
+  }) async {
     try {
       final request = http.MultipartRequest(
         'POST',
@@ -76,7 +93,8 @@ class ApiService {
 
       request.fields['user_id'] = ApiConfig.testUserId;
       if (duration != null) {
-        request.fields['duration_seconds'] = duration.inSeconds.toString();
+        request.fields['duration_seconds'] = (duration.inMilliseconds / 1000)
+            .toStringAsFixed(3);
       }
       request.files.add(
         await http.MultipartFile.fromPath('file', audioFile.path),
@@ -119,40 +137,69 @@ class ApiService {
     });
   }
 
-  static Future<List<Digest>> getDigests({String? month}) async {
-    String url = ApiConfig.getDigests(ApiConfig.testUserId);
-    if (month != null) url += '?month=$month';
-
-    final json = await _get(url);
-    final digests = json['digests'] as List? ?? [];
-    return digests
-        .map((d) => Digest.fromJson({...d as Map<String, dynamic>, 'digest': d['summary']}))
-        .toList();
-  }
-
-  /// Everything for the Daily Recap screen of one day.
-  static Future<Recap> getRecap({String? date}) async {
-    String url = ApiConfig.recap(ApiConfig.testUserId, date ?? '');
-    // for today the endpoint works without an explicit date
-    if (date == null) {
-      url = '${ApiConfig.baseUrl}/recap/${ApiConfig.testUserId}';
+  static Future<Recap> getRecap({String? date, bool force = false}) async {
+    String url = ApiConfig.getRecap(ApiConfig.testUserId);
+    if (date != null || force) {
+      url +=
+          '?${[if (date != null) 'date=$date', if (force) 'force=true'].join('&')}';
     }
 
     final json = await _get(url);
     return Recap.fromJson(json);
   }
 
+  static Future<List<Digest>> getDigests({String? month}) async {
+    String url = ApiConfig.getDigests(ApiConfig.testUserId);
+    if (month != null) url += '?month=$month';
+
+    final json = await _get(url);
+    final d_digests = json['digests'] as List? ?? [];
+    return d_digests
+        .map(
+          (d) => Digest.fromJson({
+            ...d as Map<String, dynamic>,
+            'digest': d['summary'],
+          }),
+        )
+        .toList();
+  }
+
+  static Future<Digest> generateDigest(String date) async {
+    final json = await _post(
+      '${ApiConfig.getDigest(ApiConfig.testUserId)}?date=$date',
+      {},
+    );
+    final summary = (json['digest'] as String? ?? '').trim();
+    if (summary.isEmpty || summary.startsWith('Daily summary unavailable.')) {
+      throw ApiException('Daily summary unavailable. Please try again.');
+    }
+    return Digest.fromJson(json);
+  }
+
+  static Future<void> deleteDigest(String date) async {
+    await _request(
+      () => http.delete(
+        Uri.parse('${ApiConfig.getDigests(ApiConfig.testUserId)}?date=$date'),
+      ),
+    );
+  }
+
   // ---------------- transcripts ----------------
 
   /// Newest first. Pass [date] as 'yyyy-MM-dd' to filter to one day.
-  static Future<List<Transcript>> getTranscripts({String? date, int limit = 50}) async {
+  static Future<List<Transcript>> getTranscripts({
+    String? date,
+    int? limit,
+  }) async {
     String url = '${ApiConfig.transcripts}?user_id=${ApiConfig.testUserId}';
     if (date != null) url += '&date=$date';
-    url += '&limit=$limit';
+    if (limit != null) url += '&limit=$limit';
 
     final json = await _get(url);
     final transcripts = json['transcripts'] as List? ?? [];
-    return transcripts.map((t) => Transcript.fromJson(t as Map<String, dynamic>)).toList();
+    return transcripts
+        .map((t) => Transcript.fromJson(t as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<Transcript> getTranscript(String id) async {
@@ -161,8 +208,7 @@ class ApiService {
   }
 
   /// Generate (or fetch cached) AI summary for one recording.
-  /// Returns (title, summary).
-  static Future<({String title, String summary})> generateSummary(
+  static Future<TranscriptSummary> generateSummary(
     String id, {
     bool force = false,
   }) async {
@@ -170,60 +216,139 @@ class ApiService {
     if (force) url += '?force=true';
 
     final json = await _post(url, {});
-    return (
+    return TranscriptSummary(
       title: json['title'] as String? ?? '',
       summary: json['summary'] as String? ?? '',
     );
   }
 
-  /// Rename a recording (heading one-liner).
   static Future<Transcript> renameTranscript(String id, String title) async {
-    final json = await _patch(
-      ApiConfig.transcriptDetail(id),
-      {'title': title},
-    );
+    final json = await _patch(ApiConfig.transcriptDetail(id), {'title': title});
     return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
   }
 
-  /// Star / unstar a recording.
   static Future<Transcript> setStarred(String id, bool starred) async {
-    final json = await _patch(
-      ApiConfig.transcriptDetail(id),
-      {'starred': starred},
-    );
+    final json = await _patch(ApiConfig.transcriptDetail(id), {
+      'starred': starred,
+    });
     return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
   }
 
-  /// Delete a recording permanently.
-  static Future<void> deleteTranscript(String id) async {
-    await _delete(ApiConfig.transcriptDetail(id));
+  static Future<Transcript> setSpeakerName(
+    String id,
+    Map<String, String> names,
+  ) async {
+    final json = await _patch(ApiConfig.transcriptDetail(id), {
+      'speaker_names': names,
+    });
+    return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
   }
 
-  static Future<Map<String, dynamic>> _delete(String url) => _request(
-        () => http.delete(Uri.parse(url)),
-      );
+  static Future<void> deleteTranscript(String id) async {
+    await _request(
+      () => http.delete(Uri.parse(ApiConfig.transcriptDetail(id))),
+    );
+  }
 
   // ---------------- tasks ----------------
 
   static Future<List<Task>> getTasks({String? date}) async {
-    var url = '${ApiConfig.tasks}?user_id=${ApiConfig.testUserId}';
+    String url = '${ApiConfig.tasks}?user_id=${ApiConfig.testUserId}';
     if (date != null) url += '&date=$date';
+
     final json = await _get(url);
     final tasks = json['tasks'] as List? ?? [];
     return tasks.map((t) => Task.fromJson(t as Map<String, dynamic>)).toList();
   }
 
   static Future<Task> updateTaskStatus(String id, String status) async {
-    final json = await _patch(
-      ApiConfig.taskDetail(id),
-      {'status': status},
-    );
+    final json = await _patch(ApiConfig.taskDetail(id), {'status': status});
     return Task.fromJson(json['task'] as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteTask(String id) async {
+    await _request(
+      () => http.delete(
+        Uri.parse(
+          '${ApiConfig.taskDetail(id)}?user_id=${Uri.encodeQueryComponent(ApiConfig.testUserId)}',
+        ),
+      ),
+    );
+  }
+
+  static Future<String> getTaskPlan(String id) async {
+    final json = await _get('${ApiConfig.taskDetail(id)}/plan');
+    return (json['plan'] as String?) ?? '';
+  }
+
+  static Future<Map<String, String>> getTaskBriefs(String transcriptId) async {
+    final json = await _get(
+      '${ApiConfig.tasks}/briefs'
+      '?user_id=${ApiConfig.testUserId}&transcript_id=$transcriptId',
+    );
+    final briefs = json['briefs'] as Map<String, dynamic>? ?? {};
+    return {for (final e in briefs.entries) e.key: (e.value as String?) ?? ''};
   }
 
   // ---------------- chat ----------------
 
-  static Future<ChatReply> sendChat(String message, {String? sessionId}) async {
+  /// Legacy session used by recordings made before multi-thread chat.
+  static String get chatSessionId => '${ApiConfig.testUserId}-main';
+
+  static Future<List<ChatThread>> getChatThreads() async {
+    final json = await _get(
+      '${ApiConfig.chat}/threads?user_id=${Uri.encodeQueryComponent(ApiConfig.testUserId)}',
+    );
+    return (json['threads'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map(ChatThread.fromJson)
+        .toList();
+  }
+
+  static Future<ChatThread> createChatThread() async {
+    final json = await _post('${ApiConfig.chat}/threads', {
+      'user_id': ApiConfig.testUserId,
+    });
+    return ChatThread.fromJson(json['thread'] as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteChatThread(String sessionId) async {
+    await _request(
+      () => http.delete(
+        Uri.parse(
+          '${ApiConfig.chat}/threads/${Uri.encodeComponent(sessionId)}'
+          '?user_id=${Uri.encodeQueryComponent(ApiConfig.testUserId)}',
+        ),
+      ),
+    );
+  }
+
+  static Future<List<({String text, bool isUser, List<String> sourceIds})>>
+  loadChatHistory({int limit = 100, String? sessionId}) async {
+    final json = await _get(
+      '${ApiConfig.chat}/history'
+      '?user_id=${Uri.encodeQueryComponent(ApiConfig.testUserId)}'
+      '&session_id=${Uri.encodeQueryComponent(sessionId ?? chatSessionId)}&limit=$limit',
+    );
+    final messages = json['messages'] as List? ?? [];
+    return [
+      for (final m in messages)
+        if (((m['content'] as String?) ?? '').trim().isNotEmpty)
+          (
+            text: (m['content'] as String?) ?? '',
+            isUser: (m['role'] ?? 'user') == 'user',
+            sourceIds: (m['source_ids'] as List? ?? const [])
+                .whereType<String>()
+                .toList(),
+          ),
+    ];
+  }
+
+  static Future<ChatReply> sendChat(
+    String message, {
+    String? sessionId,
+    String? requestId,
+  }) async {
     final body = <String, dynamic>{
       'user_id': ApiConfig.testUserId,
       'message': message,
@@ -231,11 +356,15 @@ class ApiService {
     if (sessionId != null) {
       body['session_id'] = sessionId;
     }
+    if (requestId != null) body['client_request_id'] = requestId;
 
     final json = await _post(ApiConfig.chat, body);
     return ChatReply(
       sessionId: json['session_id'] as String? ?? '',
       reply: json['reply'] as String? ?? '',
+      sourceIds: (json['sources'] as List<dynamic>? ?? [])
+          .map((source) => (source as Map<String, dynamic>)['id'] as String)
+          .toList(),
     );
   }
 
@@ -256,7 +385,8 @@ class ApiService {
   }
 
   static Future<SearchResults> search(String query) async {
-    final url = '${ApiConfig.search}?user_id=${ApiConfig.testUserId}'
+    final url =
+        '${ApiConfig.search}?user_id=${ApiConfig.testUserId}'
         '&q=${Uri.encodeQueryComponent(query)}';
     final json = await _get(url);
 
@@ -269,12 +399,16 @@ class ApiService {
           .map((t) => Transcript.fromJson(t as Map<String, dynamic>))
           .toList(),
       digests: digests
-          .map((d) => Digest.fromJson({
-                ...d as Map<String, dynamic>,
-                'digest': d['summary'],
-              }))
+          .map(
+            (d) => Digest.fromJson({
+              ...d as Map<String, dynamic>,
+              'digest': d['summary'],
+            }),
+          )
           .toList(),
-      tasks: tasks.map((t) => Task.fromJson(t as Map<String, dynamic>)).toList(),
+      tasks: tasks
+          .map((t) => Task.fromJson(t as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -302,8 +436,34 @@ class ApiService {
     return ProfileInfo.fromJson(json['profile'] as Map<String, dynamic>);
   }
 
+  static Future<ProfileInfo> updateTranscriptionVocabulary(
+    List<String> terms,
+  ) async {
+    final json = await _patch(ApiConfig.me, {
+      'user_id': ApiConfig.testUserId,
+      'transcription_vocabulary': terms,
+    });
+    return ProfileInfo.fromJson(json['profile'] as Map<String, dynamic>);
+  }
+
+  static Future<ProfileInfo> updateDailyRecapSchedule({
+    required bool enabled,
+    required int hour,
+    required String timezone,
+  }) async {
+    final json = await _patch(ApiConfig.me, {
+      'user_id': ApiConfig.testUserId,
+      'daily_recap_enabled': enabled,
+      'daily_recap_hour': hour,
+      'timezone': timezone,
+    });
+    return ProfileInfo.fromJson(json['profile'] as Map<String, dynamic>);
+  }
+
   static Future<UsageInfo?> getUsage() async {
-    final json = await _get('${ApiConfig.usage}?user_id=${ApiConfig.testUserId}');
+    final json = await _get(
+      '${ApiConfig.usage}?user_id=${ApiConfig.testUserId}',
+    );
     return UsageInfo.fromJson(json);
   }
 }

@@ -90,10 +90,31 @@ def get_transcripts(user_id: str, date: str = None, limit: int = 50):
             start, end = today_bounds_utc(user_id)
             query = query.gte("recorded_at", start).lt("recorded_at", end)
         else:
-            # non-today dates: filter on the string date prefix (UTC storage)
-            query = query.gte("recorded_at", f"{date}T00:00:00+00:00")
-            query = query.lt("recorded_at", f"{date}T23:59:59.999+00:00")
+            start, end = day_bounds_utc(user_id, date)
+            query = query.gte("recorded_at", start).lt("recorded_at", end)
     return query.execute().data
+
+
+def get_day_transcripts(user_id: str, date: str, page_size: int = 200):
+    """Fetch every recording for a local day, including days over one API page."""
+    start, end = day_bounds_utc(user_id, date)
+    recordings = []
+    while True:
+        page = (
+            client.table("transcripts")
+            .select("*")
+            .eq("user_id", user_id)
+            .gte("recorded_at", start)
+            .lt("recorded_at", end)
+            .order("recorded_at", desc=True)
+            .order("id", desc=True)
+            .range(len(recordings), len(recordings) + page_size - 1)
+            .execute()
+            .data
+        )
+        recordings.extend(page)
+        if len(page) < page_size:
+            return recordings
 
 def get_transcripts_for_today(user_id: str):
     start, end = today_bounds_utc(user_id)
@@ -179,11 +200,16 @@ def get_transcript_lists(user_id: str):
 # digests
 # ------------------------------------------------------------------
 
-def save_digest(user_id: str, summary: str):
+def save_digest(user_id: str, summary: str, date: str = None,
+                source_transcript_ids: list = None, source_fingerprint: str = None,
+                structured_summary: dict = None):
     data = {
         "user_id": user_id,
         "summary": summary,
-        "date": today_local_date(user_id),
+        "date": date or today_local_date(user_id),
+        "source_transcript_ids": source_transcript_ids or [],
+        "source_fingerprint": source_fingerprint,
+        "structured_summary": structured_summary,
     }
     result = client.table("digests").insert(data).execute()
     return result.data[0]
@@ -194,6 +220,33 @@ def get_digest(user_id: str, date: str = None):
     result = (
         client.table("digests")
         .select("*")
+        .eq("user_id", user_id)
+        .eq("date", date)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+def delete_digest(user_id: str, date: str):
+    result = (
+        client.table("digests")
+        .delete()
+        .eq("user_id", user_id)
+        .eq("date", date)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+def update_digest(user_id: str, date: str, summary: str,
+                  source_transcript_ids: list = None, source_fingerprint: str = None,
+                  structured_summary: dict = None):
+    updates = {"summary": summary, "structured_summary": structured_summary}
+    if source_transcript_ids is not None:
+        updates["source_transcript_ids"] = source_transcript_ids
+    if source_fingerprint is not None:
+        updates["source_fingerprint"] = source_fingerprint
+    result = (
+        client.table("digests")
+        .update(updates)
         .eq("user_id", user_id)
         .eq("date", date)
         .execute()
@@ -269,16 +322,24 @@ def save_tasks(user_id: str, tasks: list, source_transcript_id: str = None):
     result = client.table("tasks").insert(rows).execute()
     return result.data
 
-def get_tasks(user_id: str, status: str = None, limit: int = 100):
+def get_tasks(user_id: str, status: str = None, limit: int = 100,
+              completed_start: str = None, completed_end: str = None,
+              due_date: str = None):
     query = (
         client.table("tasks")
         .select("*")
         .eq("user_id", user_id)
-        .order("created_at", desc=True)
+        .order("completed_at" if completed_start or completed_end else "created_at", desc=True)
         .limit(limit)
     )
     if status:
         query = query.eq("status", status)
+    if due_date:
+        query = query.eq("due_date", due_date)
+    if completed_start:
+        query = query.gte("completed_at", completed_start)
+    if completed_end:
+        query = query.lt("completed_at", completed_end)
     return query.execute().data
 
 def search_tasks(user_id: str, query: str, limit: int = 20):
@@ -301,17 +362,74 @@ def update_task(task_id: str, updates: dict):
     result = client.table("tasks").update(updates).eq("id", task_id).execute()
     return result.data[0] if result.data else None
 
+def delete_task(task_id: str, user_id: str):
+    result = (client.table("tasks").delete().eq("id", task_id)
+              .eq("user_id", user_id).execute())
+    return bool(result.data)
+
 # ------------------------------------------------------------------
 # chat
 # ------------------------------------------------------------------
 
-def save_chat_message(user_id: str, session_id: str, role: str, content: str):
+def save_chat_message(user_id: str, session_id: str, role: str, content: str,
+                      source_ids: list[str] | None = None,
+                      client_request_id: str | None = None):
+    data = {"user_id": user_id, "session_id": session_id, "role": role, "content": content}
+    if source_ids is not None:
+        data["source_ids"] = source_ids
+    if client_request_id is not None:
+        data["client_request_id"] = client_request_id
     result = (
         client.table("chat_messages")
-        .insert({"user_id": user_id, "session_id": session_id, "role": role, "content": content})
+        .insert(data)
         .execute()
     )
+    saved = result.data[0]
+    if role == "user":
+        client.table("chat_threads").upsert({
+            "user_id": user_id, "session_id": session_id,
+            "title": content.strip()[:80] or "Chat",
+            "created_at": saved["created_at"], "updated_at": saved["created_at"],
+        }, on_conflict="user_id,session_id", ignore_duplicates=True).execute()
+        client.table("chat_threads").update({"title": content.strip()[:80] or "Chat"}).eq(
+            "user_id", user_id).eq("session_id", session_id).eq(
+            "title", "New chat").execute()
+    client.table("chat_threads").update({"updated_at": saved["created_at"]}).eq(
+        "user_id", user_id).eq("session_id", session_id).execute()
+    return saved
+
+
+def get_chat_threads(user_id: str, limit: int = 50) -> list[dict]:
+    return (client.table("chat_threads").select("session_id,title,created_at,updated_at")
+            .eq("user_id", user_id).order("updated_at", desc=True)
+            .limit(limit).execute().data or [])
+
+
+def create_chat_thread(user_id: str, session_id: str) -> dict:
+    result = (client.table("chat_threads").insert({
+        "user_id": user_id, "session_id": session_id, "title": "New chat",
+    }).execute())
     return result.data[0]
+
+
+def delete_chat_thread(user_id: str, session_id: str) -> bool:
+    thread = (client.table("chat_threads").select("session_id")
+              .eq("user_id", user_id).eq("session_id", session_id)
+              .limit(1).execute().data or [])
+    if not thread:
+        return False
+    client.table("chat_messages").delete().eq("user_id", user_id).eq(
+        "session_id", session_id).execute()
+    client.table("chat_threads").delete().eq("user_id", user_id).eq(
+        "session_id", session_id).execute()
+    return True
+
+
+def get_chat_turn(user_id: str, session_id: str, client_request_id: str) -> list[dict]:
+    return (client.table("chat_messages").select("*")
+            .eq("user_id", user_id).eq("session_id", session_id)
+            .eq("client_request_id", client_request_id)
+            .execute().data or [])
 
 def get_chat_history(user_id: str, session_id: str = None, limit: int = 20):
     query = (
@@ -333,6 +451,24 @@ def get_chat_history(user_id: str, session_id: str = None, limit: int = 20):
 def get_profile(user_id: str):
     result = client.table("profiles").select("*").eq("id", user_id).execute()
     return result.data[0] if result.data else None
+
+
+def get_scheduled_recap_profiles(page_size: int = 200):
+    offset = 0
+    while True:
+        page = (
+            client.table("profiles")
+            .select("id,timezone,daily_recap_hour")
+            .eq("daily_recap_enabled", True)
+            .order("id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+        )
+        yield from page
+        if len(page) < page_size:
+            return
+        offset += len(page)
 
 def get_or_create_profile(user_id: str):
     profile = get_profile(user_id)

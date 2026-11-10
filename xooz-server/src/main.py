@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import asyncio
 from src.routes.audio import router as audio_router
 from src.routes.digest import router as digest_router
 from src.routes.transcripts import router as transcripts_router
@@ -9,10 +11,33 @@ from src.routes.activity import router as activity_router
 from src.routes.profile import router as profile_router
 from src.routes.devices import router as devices_router
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async def recap_loop():
+        from src.services.recap_scheduler import run_scheduled_recaps_once
+        while True:
+            try:
+                await asyncio.to_thread(run_scheduled_recaps_once)
+            except Exception as exc:
+                print(f"scheduled recap scan failed: {exc}")
+            await asyncio.sleep(15 * 60)
+
+    task = asyncio.create_task(recap_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 app = FastAPI(
     title="Xooz API",
     description="Backend for Xooz — your AI conversation digest",
-    version="1.1.0"
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 app.include_router(audio_router, prefix="/api/v1")

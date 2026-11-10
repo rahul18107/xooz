@@ -2,8 +2,8 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Background
 import tempfile
 import os
 from src.services.transcription.index import transcribe
-from src.services.database import client as supabase, save_transcript, update_transcript, increment_minutes_used
-from src.services.insights import classify_transcript, extract_tasks
+from src.services.database import client as supabase, save_transcript, update_transcript, increment_minutes_used, get_profile
+from src.services.insights import extract_tasks
 
 router = APIRouter()
 
@@ -31,12 +31,7 @@ def _store_audio(user_id: str, transcript_id: str, contents: bytes, content_type
 
 def _post_process(user_id: str, transcript_id: str, text: str):
     """Runs after the upload response is sent:
-    tags the transcript (category/people/places for search) and extracts tasks."""
-    try:
-        classification = classify_transcript(text)
-        update_transcript(transcript_id, classification)
-    except Exception:
-        pass  # non-critical — transcript stays usable without tags
+    extracts tasks and accounts for usage."""
 
     try:
         tasks = extract_tasks(text)
@@ -45,6 +40,18 @@ def _post_process(user_id: str, transcript_id: str, text: str):
             save_tasks(user_id=user_id, tasks=tasks, source_transcript_id=transcript_id)
     except Exception:
         pass
+
+    try:
+        from src.services.chat_retrieval import index_transcript
+        index_transcript(transcript_id, text)
+    except Exception as exc:
+        print(f"chat embedding indexing failed: {exc}")
+
+    try:
+        from src.services.personal_facts import index_personal_facts
+        index_personal_facts(user_id, transcript_id, text)
+    except Exception as exc:
+        print(f"personal fact indexing failed: {exc}")
 
     try:
         words = len(text.split())
@@ -72,7 +79,12 @@ async def upload_audio(
 
     try:
         # transcribe
-        result = transcribe(tmp_path)
+        try:
+            profile = get_profile(user_id) or {}
+            keyterms = profile.get("transcription_vocabulary") or []
+        except Exception:
+            keyterms = []
+        result = transcribe(tmp_path, keyterms=keyterms)
 
         # save to database (failure leaves a 'failed' row so it shows in Activity → Needs Attention)
         transcript = save_transcript(
@@ -82,6 +94,15 @@ async def upload_audio(
             status="completed",
             extra={"duration_seconds": max(0, duration_seconds or 0)},
         )
+
+        metadata = {
+            "speaker_labels": result.get("speaker_labels") or [],
+            "tags": result.get("tags") or [],
+            "people": result.get("people") or [],
+            "places": result.get("places") or [],
+            "language": result.get("language") or "en",
+        }
+        transcript = update_transcript(transcript["id"], metadata) or {**transcript, **metadata}
 
         # keep the audio so the user can replay the recording later
         audio_url = _store_audio(user_id, transcript["id"], contents, file.content_type)
@@ -94,7 +115,7 @@ async def upload_audio(
                 print(f"audio URL update failed: {e}")
                 audio_url = None
 
-        # tag + extract tasks + usage accounting in the background
+        # extract tasks and account for usage in the background
         background_tasks.add_task(_post_process, user_id, transcript["id"], result["text"])
 
         transcript = {**transcript, "audio_url": audio_url}

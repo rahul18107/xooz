@@ -1,38 +1,9 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'dart:math';
+import 'package:lottie/lottie.dart';
 
-class ConnectScreen extends StatefulWidget {
+class ConnectScreen extends StatelessWidget {
   const ConnectScreen({super.key});
-
-  @override
-  State<ConnectScreen> createState() => _ConnectScreenState();
-}
-
-class _ConnectScreenState extends State<ConnectScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _rotationAnimation;
-  final bool _isSearching = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
-    _rotationAnimation = Tween<double>(
-      begin: 0,
-      end: 2 * pi,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.linear));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,13 +17,19 @@ class _ConnectScreenState extends State<ConnectScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildWatchVisual(),
+                  Lottie.asset(
+                    'assets/animations/link_search.json',
+                    width: 300,
+                    height: 338,
+                    fit: BoxFit.contain,
+                    repeat: true,
+                  ),
                   const SizedBox(height: 40),
-                  Text(
-                    _isSearching ? 'Searching for devices' : 'No devices found',
-                    style: const TextStyle(
+                  const Text(
+                    'searching...',
+                    style: TextStyle(
                       fontFamily: 'Inter',
-                      fontSize: 15,
+                      fontSize: 20,
                       color: AppColors.muted,
                     ),
                   ),
@@ -122,77 +99,6 @@ class _ConnectScreenState extends State<ConnectScreen>
     );
   }
 
-  Widget _buildWatchVisual() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // outer rotating ring
-        AnimatedBuilder(
-          animation: _rotationAnimation,
-          builder: (_, child) {
-            return Transform.rotate(
-              angle: _rotationAnimation.value,
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.accent.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
-                ),
-                child: CustomPaint(
-                  painter: _DashedCirclePainter(
-                    color: AppColors.accent.withValues(alpha: 0.4),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-        // middle ring
-        Container(
-          width: 180,
-          height: 180,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.surface, width: 1),
-          ),
-        ),
-        // inner watch circle
-        Container(
-          width: 140,
-          height: 140,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.raised, width: 2),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.watch_outlined,
-                color: AppColors.accent,
-                size: 36,
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildBottomActions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
@@ -233,38 +139,4 @@ class _ConnectScreenState extends State<ConnectScreen>
       ),
     );
   }
-}
-
-class _DashedCirclePainter extends CustomPainter {
-  final Color color;
-
-  _DashedCirclePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    const dashCount = 16;
-    const dashAngle = 2 * pi / dashCount;
-
-    for (int i = 0; i < dashCount; i++) {
-      final startAngle = i * dashAngle;
-      final endAngle = startAngle + dashAngle * 0.4;
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        endAngle - startAngle,
-        false,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashedCirclePainter oldDelegate) => false;
 }

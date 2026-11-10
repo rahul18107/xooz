@@ -1,7 +1,10 @@
 import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../models/task.dart';
+import '../models/transcript.dart';
 import '../services/api_service.dart';
+import 'conversation_tasks_screen.dart';
+import '../widgets/swipe_delete_tile.dart';
 
 class TasksScreen extends StatefulWidget {
   final String? date;
@@ -15,8 +18,10 @@ class TasksScreen extends StatefulWidget {
 
 class _TasksScreenState extends State<TasksScreen> {
   List<Task> _tasks = [];
+  Map<String, Transcript> _conversations = const {};
   bool _loading = true;
   bool _error = false;
+  final Set<String> _pendingDeleteIds = {};
 
   @override
   void initState() {
@@ -31,9 +36,15 @@ class _TasksScreenState extends State<TasksScreen> {
     });
     try {
       final tasks = await ApiService.getTasks(date: widget.date);
+      Map<String, Transcript> conversations = const {};
+      try {
+        final transcripts = await ApiService.getTranscripts(limit: 200);
+        conversations = {for (final t in transcripts) t.id: t};
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
-        _tasks = tasks;
+        _tasks = tasks.where((t) => !_pendingDeleteIds.contains(t.id)).toList();
+        _conversations = conversations;
         _loading = false;
       });
     } catch (e) {
@@ -45,28 +56,19 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
-  Future<void> _toggleTask(Task task) async {
-    final newStatus = task.isDone ? 'open' : 'done';
-    // optimistic update
-    setState(() => _tasks = [
-          for (final t in _tasks)
-            if (t.id == task.id) t.copyWith(status: newStatus) else t
-        ]);
+  /// Refreshes the list after coming back from the detail screen,
+  /// without flashing the full-screen loader.
+  Future<void> _refreshQuiet() async {
     try {
-      await ApiService.updateTaskStatus(task.id, newStatus);
-    } catch (e) {
-      // revert on failure
+      final tasks = await ApiService.getTasks(date: widget.date);
       if (!mounted) return;
-      setState(() => _tasks = [
-            for (final t in _tasks)
-              if (t.id == task.id) t.copyWith(status: task.status) else t
-          ]);
-    }
+      setState(
+        () => _tasks = tasks
+            .where((t) => !_pendingDeleteIds.contains(t.id))
+            .toList(),
+      );
+    } catch (_) {}
   }
-
-  List<Task> get _open =>
-      _tasks.where((t) => !t.isDone).toList();
-  List<Task> get _done => _tasks.where((t) => t.isDone).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +94,11 @@ class _TasksScreenState extends State<TasksScreen> {
             child: Text(
               'Couldn\'t load tasks.\nCheck that the server is running.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: AppColors.muted),
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 14,
+                color: AppColors.muted,
+              ),
             ),
           ),
         ],
@@ -169,84 +175,172 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           ),
         ],
-        if (_open.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _sectionLabel('Open'),
-          ..._open.map(_buildTaskTile),
-        ],
-        if (_done.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          _sectionLabel('Done'),
-          ..._done.map(_buildTaskTile),
-        ],
+        ..._buildClusters(_tasks),
         const SizedBox(height: 32),
       ],
     );
   }
 
-  Widget _sectionLabel(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title.toUpperCase(),
-        style: const TextStyle(
-          fontFamily: 'Inter',
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppColors.cardMuted,
-          letterSpacing: 0.5,
+  Future<void> _openCluster(String? transcriptId, List<Task> tasks) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ConversationTasksScreen(
+          transcriptId: transcriptId ?? '',
+          title: _conversationTitle(transcriptId),
         ),
       ),
     );
+    // statuses may have changed inside the cluster — refresh quietly,
+    // but only check again if some tasks were left open
+    _refreshQuiet();
   }
 
-  Widget _buildTaskTile(Task task) {
-    return GestureDetector(
-      onTap: () => _toggleTask(task),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: const Border.fromBorderSide(
-            BorderSide(color: AppColors.homeBorder),
-          ),
-          borderRadius: BorderRadius.circular(24),
+  Future<void> _deleteClusterWithUndo(List<Task> tasks) async {
+    final ids = tasks.map((t) => t.id).toSet();
+    final original = List<Task>.of(_tasks);
+    _pendingDeleteIds.addAll(ids);
+    setState(() => _tasks.removeWhere((t) => ids.contains(t.id)));
+
+    var undone = false;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Tasks deleted',
+          style: TextStyle(color: AppColors.ink),
         ),
-        child: Row(
-          children: [
-            Icon(
-              task.isDone
-                  ? Icons.check_circle
-                  : Icons.radio_button_unchecked,
-              color: task.isDone ? AppColors.accent : AppColors.muted,
-              size: 22,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                task.title,
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: task.isDone ? AppColors.muted : AppColors.ink,
-                  decoration: task.isDone ? TextDecoration.lineThrough : null,
-                ),
-              ),
-            ),
-            if (!task.isDone && task.dueDate != null)
-              Text(
-                task.dueDate!,
-                style: const TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 12,
-                  color: AppColors.cardMuted,
-                ),
-              ),
-          ],
+        backgroundColor: AppColors.homeCard,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        persist: false,
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: Colors.black,
+          onPressed: () {
+            undone = true;
+            _pendingDeleteIds.removeAll(ids);
+            if (mounted) setState(() => _tasks = original);
+          },
         ),
       ),
     );
+    await Future.delayed(const Duration(seconds: 2));
+    if (undone) return;
+    try {
+      for (final id in ids) {
+        await ApiService.deleteTask(id);
+      }
+      _pendingDeleteIds.removeAll(ids);
+      if (mounted) await _refreshQuiet();
+    } catch (_) {
+      _pendingDeleteIds.removeAll(ids);
+      if (!mounted) return;
+      await _refreshQuiet();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not delete all tasks'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  List<Widget> _buildClusters(List<Task> tasks) {
+    final groups = <String?, List<Task>>{};
+    for (final task in tasks) {
+      groups.putIfAbsent(task.sourceTranscriptId, () => []).add(task);
+    }
+
+    return [
+      for (final entry in groups.entries)
+        SwipeDeleteTile(
+          id: entry.key ?? 'unlinked',
+          onDismissed: () => _deleteClusterWithUndo(entry.value),
+          child: GestureDetector(
+            onTap: () => _openCluster(entry.key, entry.value),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                border: const Border.fromBorderSide(
+                  BorderSide(color: AppColors.homeBorder),
+                ),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: AppColors.background,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.accent,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _conversationTitle(entry.key),
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.ink,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _clusterSubtitle(entry.value),
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 12.5,
+                            color: AppColors.cardMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.cardMuted,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  String _clusterSubtitle(List<Task> tasks) {
+    final left = tasks.where((t) => !t.isDone).length;
+    final total = tasks.length;
+    if (left == 0) {
+      return 'All $total task${total == 1 ? '' : 's'} done';
+    }
+    if (left == total) {
+      return '$total task${total == 1 ? '' : 's'} to complete';
+    }
+    return '$left of $total left to complete';
+  }
+
+  String _conversationTitle(String? transcriptId) {
+    if (transcriptId == null) return 'Tasks';
+    return _conversations[transcriptId]?.displayTitle ?? 'Conversation';
   }
 }
