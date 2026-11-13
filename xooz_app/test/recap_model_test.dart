@@ -19,6 +19,23 @@ void main() {
     expect(recap.actionItems.single.taskId, 'task-one');
   });
 
+  test('shows every structured recap paragraph rather than a two-sentence preview', () {
+    final recap = Recap.fromJson({
+      'date': '2026-11-10',
+      'digest': 'Day title\n\nA short legacy digest.',
+      'structured_summary': {
+        'paragraphs': [
+          {'text': 'First conversation covered travel.'},
+          {'text': 'The afternoon discussion covered the project.'},
+          {'text': 'A later conversation covered plans for Friday.'},
+        ],
+      },
+    });
+    expect(recap.quickSummary, 'First conversation covered travel.');
+    expect(recap.detailedSummary,
+        'The afternoon discussion covered the project.\n\nA later conversation covered plans for Friday.');
+  });
+
   test('unavailable recap never displays old transcript preview text', () {
     final recap = Recap.fromJson({
       'date': '2026-11-08',

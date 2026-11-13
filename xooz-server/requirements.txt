@@ -7,4 +7,14 @@ python-dotenv
 assemblyai
 openai
 anthropic
+# On Windows, use the prebuilt VAD wheel; Resemblyzer itself must be
+# installed with --no-deps after this file (its metadata still requires
+# source-only webrtcvad): python -m pip install --no-deps resemblyzer
+resemblyzer ; sys_platform != "win32"
+webrtcvad-wheels ; sys_platform == "win32"
+librosa ; sys_platform == "win32"
+numpy ; sys_platform == "win32"
+torch ; sys_platform == "win32"
+scipy ; sys_platform == "win32"
+imageio-ffmpeg
 tzdata ; sys_platform == "win32"

@@ -25,6 +25,8 @@ class SpeakerNamesTest(unittest.TestCase):
         tasks = BackgroundTasks()
         with patch.object(transcripts, "get_transcript_by_id", return_value=self.transcript), \
              patch.object(transcripts, "update_transcript") as update, \
+             patch.object(transcripts, "get_or_create_speaker", return_value={"id": "speaker-id", "name": "Priya"}), \
+             patch("src.services.speaker_voice.remove_voice_sample") as remove_sample, \
              patch.object(transcripts, "get_digest", return_value={"summary": "old"}), \
              patch.object(transcripts, "get_transcripts", return_value=[{**self.transcript, "speaker_names": {"A": "Priya"}}]), \
              patch.object(digest, "get_digest", return_value={"summary": "old"}), \
@@ -39,7 +41,9 @@ class SpeakerNamesTest(unittest.TestCase):
             ))
             update_recap.assert_not_called()
             asyncio.run(tasks())
+        remove_sample.assert_not_called()
         self.assertEqual(result["transcript"]["speaker_names"], {"A": "Priya"})
+        self.assertEqual(result["transcript"]["speaker_ids"], {"A": "speaker-id"})
         self.assertIsNone(update.call_args.args[1]["summary"])
         self.assertEqual(update_recap.call_args.args[:3], ("test_user_1", "2026-11-07", "Priya agreed."))
 
@@ -57,6 +61,17 @@ class SpeakerNamesTest(unittest.TestCase):
         self.assertIn("Priya: Hello there", llm.call_args.args[0])
         daily_prompt = summarization._build_prompt([{**self.transcript, "speaker_names": {"A": "Priya"}}])
         self.assertIn("Priya: Hello there", daily_prompt)
+
+    def test_summary_uses_only_saved_name_not_label_and_name(self):
+        response = "Speaker A [Priya] planned a trip\n- Speaker A (Priya) will book tickets.\n- Speaker B will confirm dates."
+        with patch.object(insights, "_call_llm", return_value=response):
+            result = insights.summarize_transcript(
+                "Hello there", self.transcript["speaker_labels"], {"A": "Priya"}
+            )
+        self.assertEqual(result["title"], "Priya planned a trip")
+        self.assertIn("- Priya will book tickets.", result["summary"])
+        self.assertIn("- Speaker B will confirm dates.", result["summary"])
+        self.assertNotIn("Speaker A", result["summary"])
 
 
 if __name__ == "__main__":

@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:io';
 import '../services/audio_service.dart';
-import '../services/api_service.dart';
+import '../services/pending_upload_service.dart';
 
 class RecordingScreen extends StatefulWidget {
   /// Called when an upload succeeds after this screen was already closed
@@ -25,6 +26,7 @@ class _RecordingScreenState extends State<RecordingScreen>
   Timer? _timer;
   late AnimationController _pulseController;
   String? _statusMessage;
+  File? _stoppedFile;
 
   @override
   void initState() {
@@ -37,19 +39,27 @@ class _RecordingScreenState extends State<RecordingScreen>
   }
 
   Future<void> _startRecording() async {
-    final hasPermission = await AudioService.hasPermission();
-    if (!hasPermission) {
-      setState(() => _statusMessage = 'Microphone permission denied');
-      return;
+    try {
+      final hasPermission = await AudioService.hasPermission();
+      if (!mounted) return;
+      if (!hasPermission) {
+        setState(() => _statusMessage = 'Microphone permission denied');
+        return;
+      }
+      await AudioService.startRecording();
+      if (!mounted) return;
+      setState(() {
+        _isRecording = true;
+        _statusMessage = null;
+      });
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _duration += const Duration(seconds: 1));
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _statusMessage = 'Could not start recording: $error');
+      }
     }
-    await AudioService.startRecording();
-    setState(() {
-      _isRecording = true;
-      _statusMessage = null;
-    });
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _duration += const Duration(seconds: 1));
-    });
   }
 
   Future<void> _stopAndUpload() async {
@@ -59,56 +69,62 @@ class _RecordingScreenState extends State<RecordingScreen>
     setState(() {
       _isRecording = false;
       _isUploading = true;
-      _statusMessage = 'Transcribing...';
+      _statusMessage = 'Saving recording...';
     });
 
     try {
-      final file = await AudioService.stopRecording();
+      final file = _stoppedFile ?? await AudioService.stopRecording();
       if (file == null) throw Exception('No audio recorded');
+      _stoppedFile = file;
       if (_duration < const Duration(seconds: 1) ||
           !await file.exists() ||
           await file.length() < 2048) {
         throw Exception('Recording is empty or too short. Please try again.');
       }
 
-      await ApiService.uploadAudio(file, duration: _duration);
-
-      if (!mounted) {
-        // user already closed the screen mid-transcription — the transcript
-        // was still saved on the server; refresh the list behind us
-        widget.onUploadFinished?.call();
-        // upload finished, the temp file is safe to remove now
+      await PendingUploadService.instance.enqueue(file, _duration);
+      _stoppedFile = null;
+      try {
         await AudioService.deletePendingFile();
-        return;
-      }
-      setState(() => _statusMessage = 'Done');
-      await Future.delayed(const Duration(milliseconds: 800));
-
+      } catch (_) {}
+      if (!mounted) return;
+      widget.onUploadFinished?.call();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      // upload failed with the screen already closed — the recording was
-      // never sent, so discard the temp file quietly
-      if (!mounted) {
-        await AudioService.deletePendingFile();
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         _isUploading = false;
-        _statusMessage = 'Failed: ${e.toString()}';
+        _statusMessage = 'Could not save recording. Tap retry.';
       });
     }
   }
 
   Future<void> _cancel() async {
+    if (_isUploading) return;
+    if (_stoppedFile != null) {
+      try {
+        await PendingUploadService.instance.enqueue(_stoppedFile!, _duration);
+        _stoppedFile = null;
+        try {
+          await AudioService.deletePendingFile();
+        } catch (_) {}
+      } catch (_) {
+        if (mounted) {
+          setState(
+            () => _statusMessage = 'Could not save recording. Tap retry.',
+          );
+        }
+        return;
+      }
+    }
     _timer?.cancel();
     _pulseController.stop();
     if (!mounted) return;
-    final wasUploading = _isUploading;
     // leave instantly — don't wait for the recorder to shut down
     Navigator.pop(context);
     // discard the recording — but never delete a file that an active
     // upload is still reading, or the transcript would be lost
-    await AudioService.cancelRecording(deleteFile: !wasUploading);
+    await AudioService.cancelRecording();
   }
 
   String _formatDuration(Duration d) {
@@ -216,7 +232,7 @@ class _RecordingScreenState extends State<RecordingScreen>
                 ),
               ),
               const Spacer(),
-              if (_isRecording)
+              if (_isRecording || (_stoppedFile != null && !_isUploading))
                 GestureDetector(
                   onTap: _stopAndUpload,
                   child: Container(
@@ -226,8 +242,8 @@ class _RecordingScreenState extends State<RecordingScreen>
                       color: AppColors.ink,
                       borderRadius: BorderRadius.circular(36),
                     ),
-                    child: const Icon(
-                      Icons.stop_rounded,
+                    child: Icon(
+                      _isRecording ? Icons.stop_rounded : Icons.refresh_rounded,
                       color: AppColors.background,
                       size: 32,
                     ),

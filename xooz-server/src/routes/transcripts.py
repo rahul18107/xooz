@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from src.services.database import get_transcripts, get_transcript_by_id, update_transcript, delete_transcript, get_digest, get_profile_tz
+from src.services.database import get_transcripts, get_transcript_by_id, update_transcript, delete_transcript, get_digest, get_profile_tz, get_speakers, get_or_create_speaker, client as supabase
 from datetime import datetime
+import asyncio
 import uuid
 
 def _validate_uuid(value: str) -> str:
@@ -10,6 +11,10 @@ def _validate_uuid(value: str) -> str:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
 router = APIRouter()
+
+@router.get("/speakers")
+async def list_speakers(user_id: str = Query(...)):
+    return {"success": True, "speakers": get_speakers(user_id)}
 
 def _refresh_speaker_recap(user_id: str, date: str):
     if not get_digest(user_id, date):
@@ -40,6 +45,22 @@ async def get_transcript(transcript_id: str):
         raise HTTPException(status_code=404, detail="Transcript not found")
     return {"success": True, "transcript": transcript}
 
+@router.post("/transcripts/{transcript_id}/speaker-suggestion")
+async def get_speaker_suggestion(transcript_id: str, label: str, user_id: str):
+    tid = _validate_uuid(transcript_id)
+    transcript = get_transcript_by_id(tid)
+    if not transcript or transcript.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Transcript not found")
+    if label not in {str(turn.get("speaker")) for turn in transcript.get("speaker_labels") or []}:
+        raise HTTPException(status_code=400, detail="Unknown speaker label")
+    from src.services.speaker_voice import suggest_speaker
+    try:
+        suggestion = await asyncio.to_thread(suggest_speaker, tid, label, user_id)
+    except Exception as exc:
+        print(f"speaker suggestion failed: transcript={tid} label={label}: {exc}")
+        suggestion = None
+    return {"success": True, "suggestion": suggestion}
+
 @router.patch("/transcripts/{transcript_id}")
 async def patch_transcript(transcript_id: str, body: dict, background_tasks: BackgroundTasks):
     """Update a transcript's title, starred state, or speaker names."""
@@ -69,13 +90,35 @@ async def patch_transcript(transcript_id: str, body: dict, background_tasks: Bac
         clean_names = {key: name.strip() for key, name in names.items() if name.strip()}
         names_changed = clean_names != (transcript.get("speaker_names") or {})
         if names_changed:
-            updates["speaker_names"] = clean_names
+            speaker_ids = dict(transcript.get("speaker_ids") or {})
+            canonical_names = {}
+            for label, name in clean_names.items():
+                if name == (transcript.get("speaker_names") or {}).get(label) and label in speaker_ids:
+                    canonical_names[label] = name
+                    continue
+                speaker = get_or_create_speaker(transcript["user_id"], name)
+                speaker_ids[label] = speaker["id"]
+                canonical_names[label] = speaker["name"]
+            for label in set(speaker_ids) - set(clean_names):
+                speaker_ids.pop(label)
+            updates["speaker_names"] = canonical_names
+            updates["speaker_ids"] = speaker_ids
             updates["summary"] = None
     if not updates:
         return {"success": True, "transcript": transcript}
 
     updated = update_transcript(tid, updates)
     if names_changed:
+        from src.services.speaker_voice import remove_voice_sample, enroll_in_background
+        previous_ids = transcript.get("speaker_ids") or {}
+        current_ids = updated.get("speaker_ids") or {}
+        for label in set(previous_ids) | set(current_ids):
+            if previous_ids.get(label) == current_ids.get(label):
+                continue
+            if previous_ids.get(label):
+                background_tasks.add_task(remove_voice_sample, tid, label, previous_ids[label])
+            if current_ids.get(label) and updated.get("audio_url"):
+                background_tasks.add_task(enroll_in_background, tid, label, current_ids[label])
         recorded_at = datetime.fromisoformat(transcript["recorded_at"].replace("Z", "+00:00"))
         day = recorded_at.astimezone(get_profile_tz(transcript["user_id"])).date().isoformat()
         background_tasks.add_task(_refresh_speaker_recap, transcript["user_id"], day)
@@ -84,9 +127,18 @@ async def patch_transcript(transcript_id: str, body: dict, background_tasks: Bac
 @router.delete("/transcripts/{transcript_id}")
 async def remove_transcript(transcript_id: str):
     tid = _validate_uuid(transcript_id)
+    transcript = get_transcript_by_id(tid)
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not found")
     deleted = delete_transcript(tid)
     if not deleted:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    try:
+        from src.routes.audio import STORAGE_BUCKET
+        path = f"{transcript['user_id']}/{tid}.m4a"
+        supabase.storage.from_(STORAGE_BUCKET).remove([path])
+    except Exception as exc:
+        print(f"audio cleanup failed for transcript {tid}: {exc}")
     return {"success": True}
 
 @router.post("/transcripts/{transcript_id}/summary")

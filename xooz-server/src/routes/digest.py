@@ -22,11 +22,11 @@ def _completed(transcripts: list) -> list:
 
 
 def _fingerprint(transcripts: list) -> str:
-    inputs = [{"id": t["id"], "text": t.get("text"),
+    inputs = [{"id": t["id"], "text": t.get("text"), "summary": t.get("summary"),
                "speaker_labels": t.get("speaker_labels"),
                "speaker_names": t.get("speaker_names")}
               for t in sorted(transcripts, key=lambda t: t["id"])]
-    return hashlib.sha256(("grounded-v4:" + json.dumps(inputs, sort_keys=True)).encode()).hexdigest()
+    return hashlib.sha256(("grounded-v7:" + json.dumps(inputs, sort_keys=True)).encode()).hexdigest()
 
 
 def _current_digest(user_id: str, date: str, transcripts: list, force: bool = False):

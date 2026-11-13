@@ -129,55 +129,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final timezoneController = TextEditingController(text: profile.timezone);
     var enabled = profile.dailyRecapEnabled;
     var hour = profile.dailyRecapHour;
-    final choice = await showDialog<({bool enabled, int hour, String timezone})>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, updateDialog) => AlertDialog(
-          backgroundColor: Colors.white,
-          title: const Text('Daily recap', style: TextStyle(color: AppColors.ink)),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  title: const Text('Automatic recap', style: TextStyle(color: AppColors.ink)),
-                  value: enabled,
-                  onChanged: (value) => updateDialog(() => enabled = value),
+    final choice =
+        await showDialog<({bool enabled, int hour, String timezone})>(
+          context: context,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, updateDialog) => AlertDialog(
+              backgroundColor: Colors.white,
+              title: const Text(
+                'Daily recap',
+                style: TextStyle(color: AppColors.ink),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SwitchListTile(
+                      title: const Text(
+                        'Automatic recap',
+                        style: TextStyle(color: AppColors.ink),
+                      ),
+                      value: enabled,
+                      onChanged: (value) => updateDialog(() => enabled = value),
+                    ),
+                    DropdownButtonFormField<int>(
+                      initialValue: hour,
+                      decoration: const InputDecoration(
+                        labelText: 'Local hour',
+                      ),
+                      items: [
+                        for (var h = 0; h < 24; h++)
+                          DropdownMenuItem(
+                            value: h,
+                            child: Text('${h.toString().padLeft(2, '0')}:00'),
+                          ),
+                      ],
+                      onChanged: (value) =>
+                          updateDialog(() => hour = value ?? hour),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: timezoneController,
+                      style: const TextStyle(color: AppColors.ink),
+                      decoration: const InputDecoration(
+                        labelText: 'Timezone',
+                        hintText: 'Asia/Kolkata',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                 ),
-                DropdownButtonFormField<int>(
-                  initialValue: hour,
-                  decoration: const InputDecoration(labelText: 'Local hour'),
-                  items: [for (var h = 0; h < 24; h++)
-                    DropdownMenuItem(value: h, child: Text('${h.toString().padLeft(2, '0')}:00'))],
-                  onChanged: (value) => updateDialog(() => hour = value ?? hour),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: timezoneController,
-                  style: const TextStyle(color: AppColors.ink),
-                  decoration: const InputDecoration(
-                    labelText: 'Timezone',
-                    hintText: 'Asia/Kolkata',
-                    border: OutlineInputBorder(),
-                  ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, (
+                    enabled: enabled,
+                    hour: hour,
+                    timezone: timezoneController.text.trim(),
+                  )),
+                  child: const Text('Save'),
                 ),
               ],
             ),
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, (
-                enabled: enabled,
-                hour: hour,
-                timezone: timezoneController.text.trim(),
-              )),
-              child: const Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
+        );
     timezoneController.dispose();
     if (choice == null || !mounted) return;
     try {
@@ -197,6 +215,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SnackBar(content: Text('Could not save daily recap schedule')),
       );
     }
+  }
+
+  void _showDataPrivacy() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text(
+          'Data & Privacy',
+          style: TextStyle(color: AppColors.ink),
+        ),
+        content: const Text(
+          'Recordings are sent to the server for transcription. If the connection fails, the audio stays on this phone and retries automatically. You can delete individual recordings from the home or transcript screen. Full account export and deletion will be available with sign-in.',
+          style: TextStyle(color: AppColors.ink),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -278,6 +319,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.shield_outlined,
                       title: 'Data & Privacy',
                       iconColor: AppColors.ink,
+                      onTap: _showDataPrivacy,
                     ),
                   ]),
                   const SizedBox(height: 32),

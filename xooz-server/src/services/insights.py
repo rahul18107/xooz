@@ -118,6 +118,7 @@ Then 2-5 bullet lines starting with "- " covering what was discussed, decisions 
 Write in the recording's dominant language. Keep names and places as spoken.
 When speaker labels are present, attribute statements and commitments to the correct speaker.
 Use the provided speaker names when present; otherwise use Speaker A, Speaker B, etc.
+For a named speaker, write only the name. Never combine a Speaker A/B label with a name in brackets or parentheses.
 
 Recording:
 {recording}"""
@@ -135,6 +136,16 @@ Recording:
     summary = '\n'.join(lines) if lines else response.strip()
     if not title and summary:
         fallback_title = summary.splitlines()[0].lstrip('-• ').strip()[:60]
+
+    for label, name in (speaker_names or {}).items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        pattern = rf"\bSpeaker\s+{re.escape(str(label))}\b(?:[ \t]*[\[(][^\])\r\n]{{1,80}}[\])])?"
+        summary = re.sub(pattern, name.strip(), summary, flags=re.IGNORECASE)
+        if title:
+            title = re.sub(pattern, name.strip(), title, flags=re.IGNORECASE)
+        if fallback_title:
+            fallback_title = re.sub(pattern, name.strip(), fallback_title, flags=re.IGNORECASE)
 
     return {"title": title or fallback_title or "Recording", "summary": summary}
 
@@ -279,6 +290,17 @@ def task_status_for_question(message: str) -> str | None:
     return "open"
 
 
+def asks_prior_open_tasks(message: str) -> bool:
+    lower = message.lower()
+    return (task_status_for_question(message) == "open"
+            and bool(re.search(r"\b(?:task|tasks|to-?dos?)\b", lower))
+            and bool(re.search(
+                r"\b(?:previous|earlier|past|older|prior)\s+days?\b"
+                r"|\b(?:before today|from yesterday|left over from yesterday)\b"
+                r"|\b(?:last week|previous week)\b", lower,
+            )))
+
+
 def answer_question(message: str, context: dict, used_source_ids: list[str] | None = None) -> str:
     """Answer a user question grounded in their own recordings.
     context keys: transcripts (list), tasks (list), history (list of {role, content}),
@@ -288,6 +310,16 @@ def answer_question(message: str, context: dict, used_source_ids: list[str] | No
 
     transcripts = context.get("transcripts") or []
     tasks = context.get("tasks") or []
+    if context.get("prior_open_tasks"):
+        if not tasks:
+            return "You have no unfinished tasks from previous days in your task list."
+        shown = tasks[:8]
+        lines = [f"- {task['title']}" +
+                 (f" (due {task['due_date']})" if task.get("due_date") else "")
+                 for task in shown if task.get("title")]
+        more = ("\n- More unfinished tasks are in the Tasks tab."
+                if len(tasks) > len(shown) else "")
+        return "Yes. Your unfinished tasks from previous days are:\n" + "\n".join(lines) + more
     event_day = context.get("event_day")
     if event_day:
         from src.services.temporal_evidence import quote_supports_day

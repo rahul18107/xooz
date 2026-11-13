@@ -121,6 +121,10 @@ class DigestSourcesTest(unittest.TestCase):
         prompt = summarization._build_prompt([recording])
         self.assertIn("Speaker B: Discussed train travel", prompt)
 
+    def test_generic_recording_title_is_not_used_as_day_heading(self):
+        recording = {**self.recordings[0], "title": "Smartwatch Conversation Recording Summary."}
+        self.assertEqual(summarization._source_title([recording]), "Discussed train travel")
+
     def test_fallback_retries_after_bucket_expires(self):
         fingerprint = digest._fingerprint(self.recordings)
         with patch.object(digest, "get_digest", return_value={"summary": "old", "source_fingerprint": f"fallback:{fingerprint}:2000010100"}), \
@@ -150,17 +154,46 @@ class DigestSourcesTest(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_invalid_first_response_retries_then_returns_real_summary(self):
+        recording = {**self.recordings[0], "text": "Discussed train travel. Reviewed hotel options."}
         valid = ('{"title":"Train discussion","paragraphs":[{'
                  '"text":"Train travel was discussed.","recording_id":"one",'
-                 '"quote":"Discussed train travel"}]}')
+                 '"quote":"Discussed train travel"},{'
+                 '"text":"Hotel options were reviewed.","recording_id":"one",'
+                 '"quote":"Reviewed hotel options"}]}')
         with patch.object(summarization, "_summarize_cloudflare",
                           side_effect=["not json", valid]) as generate, \
              patch.object(summarization, "ACTIVE_SUMMARIZATION_PROVIDER", "cloudflare"):
-            result, fallback = summarization.summarize_with_status(self.recordings)
+            result, fallback = summarization.summarize_with_status([recording])
         self.assertFalse(fallback)
         self.assertEqual(generate.call_count, 2)
         self.assertIn("Train travel was discussed.", result)
         self.assertNotIn("action_items", generate.call_args.args[0])
+
+    def test_thin_recap_recovers_coverage_from_other_recordings(self):
+        recordings = [
+            {"id": "one", "text": "We discussed train travel.", "recorded_at": "2026-11-08T09:00:00Z"},
+            {"id": "two", "text": "We reviewed the project report.", "recorded_at": "2026-11-08T10:00:00Z"},
+            {"id": "three", "text": "We planned the phone test.", "recorded_at": "2026-11-08T11:00:00Z"},
+        ]
+        train = {"title": "Train travel", "paragraphs": [{
+            "text": "We discussed train travel.", "recording_id": "one",
+            "quote": "discussed train travel",
+        }]}
+        project = {"title": "Project report", "paragraphs": [{
+            "text": "We reviewed the project report.", "recording_id": "two",
+            "quote": "reviewed the project report",
+        }]}
+        phone = {"title": "Phone test", "paragraphs": [{
+            "text": "We planned the phone test.", "recording_id": "three",
+            "quote": "planned the phone test",
+        }]}
+        with patch.object(summarization, "_summarize_cloudflare",
+                          side_effect=[train, train, project, phone]) as generate:
+            result = summarization._generate_validated(recordings)
+        self.assertEqual(generate.call_count, 4)
+        self.assertEqual({item["recording_id"] for item in result["paragraphs"]},
+                         {"one", "two", "three"})
+        self.assertNotIn('"action_items"', generate.call_args_list[0].args[0])
 
     def test_extra_model_paragraphs_keep_first_five_valid_ones(self):
         paragraphs = [{"text": "Train travel was discussed.", "recording_id": "one",
@@ -182,14 +215,18 @@ class DigestSourcesTest(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
 
     def test_cloudflare_object_response_generates_recap(self):
+        recording = {**self.recordings[0], "text": "Discussed train travel. Reviewed hotel options."}
         recap = {"title": "Train discussion", "paragraphs": [{
             "text": "Train travel was discussed.",
             "recording_id": "one", "quote": "Discussed train travel",
+        }, {
+            "text": "Hotel options were reviewed.",
+            "recording_id": "one", "quote": "Reviewed hotel options",
         }]}
         with patch.object(summarization.httpx, "post") as post, \
              patch.object(summarization, "ACTIVE_SUMMARIZATION_PROVIDER", "cloudflare"):
             post.return_value.json.return_value = {"success": True, "result": {"response": recap}}
-            result, unavailable = summarization.summarize_with_status(self.recordings)
+            result, unavailable = summarization.summarize_with_status([recording])
         self.assertFalse(unavailable)
         self.assertIn("Train travel was discussed.", result)
         self.assertEqual(post.call_count, 1)

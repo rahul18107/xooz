@@ -2,6 +2,7 @@ from supabase import create_client
 from src.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+import re
 
 client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -74,6 +75,22 @@ def save_transcript(user_id: str, text: str, speaker_labels: list = None,
         data.update(extra)
     result = client.table("transcripts").insert(data).execute()
     return result.data[0]
+
+
+def get_speakers(user_id: str) -> list[dict]:
+    speakers = (client.table("speakers").select("id,name")
+                .eq("user_id", user_id).order("name").execute().data)
+    return [speaker for speaker in speakers
+            if not re.fullmatch(r"Unknown Speaker #\d+", speaker["name"])]
+
+
+def get_or_create_speaker(user_id: str, name: str) -> dict:
+    for speaker in get_speakers(user_id):
+        if speaker["name"].casefold() == name.casefold():
+            return speaker
+    return (client.table("speakers").insert({"user_id": user_id, "name": name})
+            .execute().data[0])
+
 
 def get_transcripts(user_id: str, date: str = None, limit: int = 50):
     """Transcripts for a user, newest first. `date` (YYYY-MM-DD) filters to that
@@ -324,7 +341,7 @@ def save_tasks(user_id: str, tasks: list, source_transcript_id: str = None):
 
 def get_tasks(user_id: str, status: str = None, limit: int = 100,
               completed_start: str = None, completed_end: str = None,
-              due_date: str = None):
+              due_date: str = None, created_before: str = None):
     query = (
         client.table("tasks")
         .select("*")
@@ -336,6 +353,8 @@ def get_tasks(user_id: str, status: str = None, limit: int = 100,
         query = query.eq("status", status)
     if due_date:
         query = query.eq("due_date", due_date)
+    if created_before:
+        query = query.lt("created_at", created_before)
     if completed_start:
         query = query.gte("completed_at", completed_start)
     if completed_end:

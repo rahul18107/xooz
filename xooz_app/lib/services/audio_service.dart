@@ -14,9 +14,13 @@ class AudioService {
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) throw Exception('Microphone permission denied');
 
-    final dir = await getTemporaryDirectory();
+    final support = await getApplicationSupportDirectory();
+    final dir = Directory(
+      '${support.path}${Platform.pathSeparator}raw_recordings',
+    );
+    if (!await dir.exists()) await dir.create(recursive: true);
     _currentPath =
-        '${dir.path}/xooz_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        '${dir.path}/xooz_${DateTime.now().microsecondsSinceEpoch}.m4a';
 
     await _recorder.start(
       const RecordConfig(
@@ -26,13 +30,30 @@ class AudioService {
       ),
       path: _currentPath!,
     );
-
   }
 
   static Future<File?> stopRecording() async {
     final path = await _recorder.stop();
     if (path == null) return null;
     return File(path);
+  }
+
+  static Future<List<File>> recoverableRecordings() async {
+    final support = await getApplicationSupportDirectory();
+    final dir = Directory(
+      '${support.path}${Platform.pathSeparator}raw_recordings',
+    );
+    if (!await dir.exists()) return [];
+    final files = <File>[];
+    final activePath = await _recorder.isRecording() ? _currentPath : null;
+    await for (final entry in dir.list()) {
+      if (entry is File && entry.path != activePath &&
+          entry.path.endsWith('.m4a') &&
+          await entry.length() >= 2048) {
+        files.add(entry);
+      }
+    }
+    return files;
   }
 
   static Future<bool> isRecording() async {

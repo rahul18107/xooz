@@ -84,6 +84,7 @@ class ApiService {
   static Future<Transcript?> uploadAudio(
     File audioFile, {
     Duration? duration,
+    String? clientRecordingId,
   }) async {
     try {
       final request = http.MultipartRequest(
@@ -92,6 +93,9 @@ class ApiService {
       );
 
       request.fields['user_id'] = ApiConfig.testUserId;
+      if (clientRecordingId != null) {
+        request.fields['client_recording_id'] = clientRecordingId;
+      }
       if (duration != null) {
         request.fields['duration_seconds'] = (duration.inMilliseconds / 1000)
             .toStringAsFixed(3);
@@ -100,7 +104,9 @@ class ApiService {
         await http.MultipartFile.fromPath('file', audioFile.path),
       );
 
-      final streamedResponse = await request.send();
+      final streamedResponse = await request.send().timeout(
+        const Duration(minutes: 3),
+      );
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode != 200) {
@@ -242,6 +248,30 @@ class ApiService {
       'speaker_names': names,
     });
     return Transcript.fromJson(json['transcript'] as Map<String, dynamic>);
+  }
+
+  static Future<List<String>> getSpeakerNames(String userId) async {
+    final json = await _get(
+      '${ApiConfig.baseUrl}/speakers?user_id=${Uri.encodeQueryComponent(userId)}',
+    );
+    final speakers = json['speakers'] as List? ?? [];
+    return speakers.map((speaker) => speaker['name'] as String).toList();
+  }
+
+  static Future<({String name, String tier})?> getSpeakerSuggestion(
+    String transcriptId,
+    String label,
+    String userId,
+  ) async {
+    final url =
+        '${ApiConfig.transcriptDetail(transcriptId)}/speaker-suggestion'
+        '?label=${Uri.encodeQueryComponent(label)}&user_id=${Uri.encodeQueryComponent(userId)}';
+    final json = await _post(url, {});
+    final suggestion = json['suggestion'] as Map<String, dynamic>?;
+    final name = suggestion?['name'] as String?;
+    return name == null
+        ? null
+        : (name: name, tier: suggestion?['tier'] as String? ?? 'possible');
   }
 
   static Future<void> deleteTranscript(String id) async {

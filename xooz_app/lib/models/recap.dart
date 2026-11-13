@@ -44,6 +44,12 @@ class Recap {
     final structured = json['structured_summary'] is Map<String, dynamic>
         ? json['structured_summary'] as Map<String, dynamic>
         : <String, dynamic>{};
+    final paragraphs = (structured['paragraphs'] as List? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map((item) => (item['text'] ?? '').toString().trim())
+        .where((text) => text.isNotEmpty)
+        .map((text) => '${text[0].toUpperCase()}${text.substring(1)}')
+        .toList();
     List<RecapFact> facts(String key) => (structured[key] as List? ?? [])
         .whereType<Map<String, dynamic>>()
         .map(RecapFact.fromJson)
@@ -52,8 +58,8 @@ class Recap {
     return Recap(
       date: date,
       title: unavailable ? 'Daily recap' : parts.$1,
-      quickSummary: unavailable ? '' : parts.$2,
-      detailedSummary: unavailable ? '' : parts.$3,
+      quickSummary: unavailable ? '' : (paragraphs.isNotEmpty ? paragraphs.first : parts.$2),
+      detailedSummary: unavailable ? '' : (paragraphs.isNotEmpty ? paragraphs.skip(1).join('\n\n') : parts.$3),
       isUnavailable: unavailable,
       recordingCount: (stats['recordings'] as num?)?.toInt() ?? 0,
       minutes: (stats['minutes'] as num?)?.toDouble() ?? 0.0,

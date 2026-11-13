@@ -58,6 +58,9 @@ def _conversation_context(transcripts: list) -> str:
         combined += f"\n--- Conversation {i}, id {transcript.get('id')} ({transcript.get('recorded_at')}) ---\n"
         text = transcript.get('text') or ''
         combined += f"Raw transcript: {_raw_excerpt(text)}\n"
+        summary = (transcript.get('summary') or '').strip()
+        if summary:
+            combined += f"Existing recording summary (verify against raw transcript): {summary[:900]}\n"
         if len(text) > 2200:
             combined += "[Only an excerpt of this recording is shown.]\n"
 
@@ -88,14 +91,15 @@ def _build_prompt(transcripts: list) -> str:
 {_conversation_context(transcripts)}
 
 Return only a JSON object with this shape:
-{{"title":"Specific 3-6 word title", "paragraphs":[{{"text":"One or two factual sentences.", "recording_id":"exact conversation id", "quote":"exact verbatim span from that conversation's transcript"}}], "action_items":[], "decisions":[], "unresolved_questions":[]}}
-Write up to 5 substantive paragraphs (2-3 factual sentences each) when there is enough distinct evidence.
+{{"title":"Specific 3-6 word title", "paragraphs":[{{"text":"Two factual sentences covering context and outcome where supported.", "recording_id":"exact conversation id", "quote":"exact verbatim span from that conversation's transcript"}}], "decisions":[], "unresolved_questions":[]}}
+Write 2-5 distinct, substantive paragraphs. Aim for 2-3 grounded sentences per paragraph where the evidence supports them. Use 3-5 paragraphs when the recordings contain enough distinct evidence.
 Cover the day's main topics, decisions, commitments, and follow-ups in chronological order when supported;
-use fewer paragraphs for a short or repetitive day. Do not repeat the same point.
+For a short day, cover separate supported aspects rather than repeating the same point.
 Write in the dominant language of the day's conversations.
 Each paragraph must be supported by its own exact, contiguous quote copied from the Raw transcript.
-For action_items, decisions, and unresolved_questions, include only explicit items stated in the recording.
+For decisions and unresolved_questions, include only explicit items stated in the recording.
 Each item must use the same text, recording_id, and exact quote fields as a paragraph; empty arrays are fine.
+Do not list tasks as recap paragraphs; the app presents saved tasks separately.
 If a paragraph needs evidence from two recordings, split it into two paragraphs.
 Do not add names, dates, locations, decisions, or commitments not explicitly present in the quote.
 If speaker identity is uncertain, do not attribute a commitment to a person.
@@ -103,14 +107,17 @@ Use no markdown, filler, or invented detail. The provided text may be excerpts;
 do not claim to cover everything said in a recording."""
 
 
-def _repair_prompt(transcripts: list) -> str:
-    return f"""Summarize only one well-supported fact from these conversations.
+def _repair_prompt(transcripts: list, covered: list | None = None) -> str:
+    already = "\nAlready covered; add different topics:\n" + "\n".join(
+        item["text"] for item in covered
+    ) if covered else ""
+    return f"""Write 2-5 distinct, substantive recap paragraphs covering the main topics of this day.
 {_conversation_context(transcripts)}
+{already}
 
 Return only JSON with this exact shape:
-{{"title":"Short factual title", "paragraphs":[{{"text":"One factual sentence.", "recording_id":"exact id above", "quote":"exact contiguous words from that recording's Raw transcript"}}]}}
-Copy the quote verbatim, including names and numbers used in the sentence.
-Do not include any detail not present in the quote. Do not include other fields."""
+{{"title":"Specific short title", "paragraphs":[{{"text":"One factual sentence.", "recording_id":"exact id above", "quote":"exact contiguous words from that recording's Raw transcript"}}]}}
+Use two factual sentences per paragraph when the source supports them. Copy each quote verbatim. Do not invent details or list tasks separately. Do not include other fields."""
 
 
 def _prompt_batches(transcripts: list, max_chars: int = 14000) -> list[list]:
@@ -132,8 +139,9 @@ def _source_title(transcripts: list) -> str:
     for transcript in transcripts:
         for candidate in (transcript.get("title"), transcript.get("text")):
             words = re.findall(r"[\w'-]+", (candidate or "").strip(), re.UNICODE)
-            if words and (candidate or "").strip().casefold() not in {
-                "recorded conversations", "recording", "daily recap", "conversation recap"
+            if words and " ".join(words).casefold() not in {
+                "recorded conversations", "recording", "daily recap", "conversation recap",
+                "smartwatch conversation recording summary",
             }:
                 title = " ".join(words[:7])
                 return title[0].upper() + title[1:]
@@ -187,10 +195,18 @@ def _validated_recap_data(raw: str | dict, transcripts: list) -> dict | None:
             if source_id not in sources or not _quote_present(quote, sources[source_id]):
                 return None
             quoted_words = set(re.findall(r"[a-z0-9]+", quote.casefold()))
+            source_words = set(re.findall(r"[a-z0-9]+", sources[source_id].casefold()))
             claimed_details = re.findall(r"\b[A-Z][a-z]+\b|\b\d[\d./-]*\b", body)
             generic_starts = {"The", "A", "An", "We", "They", "It", "This", "That", "During", "After", "Before"}
-            if any(not set(re.findall(r"[a-z0-9]+", detail.casefold())).issubset(quoted_words)
+            if any(not set(re.findall(r"[a-z0-9]+", detail.casefold())).issubset(source_words)
                    for detail in claimed_details if detail not in generic_starts):
+                return None
+            stopwords = {"a", "an", "the", "and", "or", "to", "of", "in", "on", "at", "for",
+                         "from", "with", "by", "is", "are", "was", "were", "will", "we",
+                         "they", "it", "this", "that", "can", "could", "should"}
+            body_words = set(re.findall(r"[a-z0-9]+", body.casefold())) - stopwords
+            if (body_words and (not body_words.intersection(quoted_words)
+                                or len(body_words.intersection(source_words)) * 2 < len(body_words))):
                 return None
             return {"text": body.strip(), "recording_id": source_id, "quote": quote}
 
@@ -222,16 +238,94 @@ def _validated_recap(raw: str, transcripts: list) -> str | None:
     )
 
 
-def _generate_validated(transcripts: list) -> dict | None:
+def _combine_recap_data(first: dict | None, second: dict | None, transcripts: list) -> dict | None:
+    if not first:
+        return second
+    if not second:
+        return first
+    seen = set()
+    distinct = []
+    for item in first["paragraphs"] + second["paragraphs"]:
+        key = re.sub(r"\W+", " ", item["text"].casefold()).strip()
+        if key not in seen:
+            seen.add(key)
+            distinct.append(item)
+    return _validated_recap_data({
+        "title": first["title"],
+        "paragraphs": distinct,
+        "decisions": first["decisions"] + second["decisions"],
+        "unresolved_questions": first["unresolved_questions"] + second["unresolved_questions"],
+    }, transcripts)
+
+
+def _minimum_paragraphs(transcripts: list) -> int:
+    return min(3, len(transcripts)) if len(transcripts) > 2 else 2
+
+
+def _summary_backed_data(transcript: dict, limit: int = 2) -> dict | None:
+    summary = (transcript.get("summary") or "").strip()
+    source = (transcript.get("text") or "").strip()
+    if not summary or not source or len(source) > 3000:
+        return None
+    candidates = []
+    for line in summary.splitlines():
+        line = re.sub(r"^\s*[-*\d.)]+\s*", "", line).strip()
+        stripped = re.sub(r"^Speaker\s+[A-Z](?:\s*\([^)]*\))?\s*:\s*", "", line)
+        had_speaker = stripped != line
+        line = stripped
+        if line:
+            body = line[0].lower() + line[1:]
+            candidates.append("The speaker " + body if had_speaker else body)
+    data = _validated_recap_data({
+        "title": transcript.get("title") or _source_title([transcript]),
+        "paragraphs": [
+            {"text": body, "recording_id": str(transcript["id"]), "quote": source}
+            for body in candidates
+        ],
+    }, [transcript]) if candidates else None
+    if data:
+        data["paragraphs"] = data["paragraphs"][:limit]
+    return data
+
+
+def _generate_validated(transcripts: list, allow_partial: bool = False) -> dict | None:
     prompt = _build_prompt(transcripts)
     data = _validated_recap_data(_summarize_cloudflare(prompt), transcripts)
-    if data:
+    target = _minimum_paragraphs(transcripts)
+    if data and len(data["paragraphs"]) >= target:
         return data
-    print("daily recap response did not contain a valid source quote; retrying with a shorter request")
-    repaired = _validated_recap_data(_summarize_cloudflare(_repair_prompt(transcripts)), transcripts)
-    if not repaired:
-        print("daily recap retry also failed quote validation")
-    return repaired
+    print("daily recap lacked enough supported paragraphs; retrying for broader coverage")
+    repaired = _validated_recap_data(_summarize_cloudflare(
+        _repair_prompt(transcripts, (data or {}).get("paragraphs"))
+    ), transcripts)
+    data = _combine_recap_data(data, repaired, transcripts)
+    if data and len(data["paragraphs"]) >= target:
+        return data
+
+    covered = {item["recording_id"] for item in (data or {}).get("paragraphs", [])}
+    for transcript in sorted(transcripts, key=lambda t: t["id"] in covered):
+        if data and len(data["paragraphs"]) >= target:
+            break
+        try:
+            additional = _validated_recap_data(_summarize_cloudflare(
+                _repair_prompt([transcript], (data or {}).get("paragraphs"))
+            ), [transcript])
+        except Exception as exc:
+            print(f"daily recap additional coverage failed: {exc}")
+            continue
+        data = _combine_recap_data(data, additional, transcripts)
+    covered = {item["recording_id"] for item in (data or {}).get("paragraphs", [])}
+    for transcript in sorted(transcripts, key=lambda t: str(t["id"]) in covered):
+        if data and len(data["paragraphs"]) >= target:
+            break
+        data = _combine_recap_data(data, _summary_backed_data(
+            transcript, limit=2 if len(transcripts) == 1 else 1
+        ), transcripts)
+        covered = {item["recording_id"] for item in (data or {}).get("paragraphs", [])}
+    if data and len(data["paragraphs"]) < target:
+        print(f"daily recap rejected: only {len(data['paragraphs'])}/{target} supported paragraphs")
+        return data if allow_partial else None
+    return data
 
 def summarize_structured_with_status(transcripts: list) -> tuple[str | None, dict | None, bool]:
     if not transcripts:
@@ -252,7 +346,7 @@ def summarize_structured_with_status(transcripts: list) -> tuple[str | None, dic
             incomplete = False
             for batch_number, batch in enumerate(batches, 1):
                 try:
-                    data = _generate_validated(batch)
+                    data = _generate_validated(batch, allow_partial=True)
                     if data:
                         candidates.extend(data["paragraphs"])
                         for field in sections:
@@ -264,6 +358,14 @@ def summarize_structured_with_status(transcripts: list) -> tuple[str | None, dic
                     print(f"daily recap batch {batch_number}/{len(batches)} failed: {exc}")
                     incomplete = True
             if candidates:
+                seen_text = set()
+                distinct_candidates = []
+                for item in candidates:
+                    key = re.sub(r"\W+", " ", item["text"].casefold()).strip()
+                    if key not in seen_text:
+                        seen_text.add(key)
+                        distinct_candidates.append(item)
+                candidates = distinct_candidates
                 if len(candidates) > 24:
                     candidates = [candidates[int(i * len(candidates) / 24)] for i in range(24)]
                 indices = sorted({round(i * (len(candidates) - 1) / 4) for i in range(5)})
@@ -290,7 +392,7 @@ def summarize_structured_with_status(transcripts: list) -> tuple[str | None, dic
                     selected_data[field] = list({(item["recording_id"], item["text"]): item
                                                  for item in items}.values())[:10]
                 validated_data = _validated_recap_data(selected_data, transcripts)
-                if validated_data:
+                if validated_data and len(validated_data["paragraphs"]) >= _minimum_paragraphs(transcripts):
                     return _validated_recap(json.dumps(validated_data), transcripts), validated_data, incomplete
         return None, None, True
     else:

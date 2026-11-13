@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/transcript.dart';
 import '../models/digest.dart';
 import '../services/api_service.dart';
+import '../services/pending_upload_service.dart';
 import '../widgets/digest_card.dart';
 import '../widgets/transcript_tile.dart';
 import '../widgets/bottom_bar.dart';
@@ -26,7 +27,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   late AnimationController _skeletonController;
   List<Digest> _digests = []; // one card per recent day
@@ -36,10 +38,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _loading = true;
   bool _loadFailed = false;
   bool _generatingRecaps = false;
+  int _lastPendingCount = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    PendingUploadService.instance.addListener(_onPendingChanged);
+    PendingUploadService.instance.initialize();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() => setState(() {}));
     _skeletonController = AnimationController(
@@ -47,6 +53,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1400),
     )..repeat();
     _loadData(showLoading: true);
+  }
+
+  void _onPendingChanged() {
+    if (!mounted) return;
+    final count = PendingUploadService.instance.items.length;
+    if (count < _lastPendingCount) _loadData();
+    _lastPendingCount = count;
+    setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      PendingUploadService.instance.retryAll();
+      _loadData();
+    }
   }
 
   Future<void> _loadData({bool showLoading = false}) async {
@@ -126,6 +148,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PendingUploadService.instance.removeListener(_onPendingChanged);
     _skeletonController.dispose();
     _tabController.dispose();
     super.dispose();
@@ -353,10 +377,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               itemCount: recapCardCount,
               separatorBuilder: (_, _) => const SizedBox(width: 14),
               itemBuilder: (context, i) {
-                if (i >= visibleDigests.length) {
+                if (showGenerateCard && i == 0) {
                   return _generateRecapCard(missingRecapDates);
                 }
-                final d = visibleDigests[i];
+                final d = visibleDigests[i - (showGenerateCard ? 1 : 0)];
                 return DigestCard(
                   digest: d,
                   onTap: () => _showRecapSummaryFor(d.date),
@@ -489,6 +513,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildTodaySection() {
+    final pending = PendingUploadService.instance.items;
     final recordingsBody = _loading
         ? _buildRecordingSkeleton()
         : _transcripts.isEmpty
@@ -523,6 +548,74 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         const SizedBox(height: 14),
+        if (pending.isNotEmpty) ...[
+          for (final item in pending)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.homeCard,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.cloud_upload_outlined,
+                      color: AppColors.homeInk,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Recording saved on this phone',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.homeInk,
+                            ),
+                          ),
+                          Text(
+                            item.uploading
+                                ? 'Uploading and transcribing...'
+                                : item.error == null
+                                ? 'Waiting to upload'
+                                : 'Upload failed. Tap retry.',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              color: AppColors.homeMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (item.uploading)
+                      const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      IconButton(
+                        tooltip: 'Retry upload',
+                        onPressed: () =>
+                            PendingUploadService.instance.retryAll(),
+                        icon: const Icon(
+                          Icons.refresh,
+                          color: AppColors.homeInk,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 260),
           switchInCurve: Curves.easeOutCubic,

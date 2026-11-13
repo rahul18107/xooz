@@ -11,6 +11,35 @@ from src.services.temporal_evidence import quote_supports_day, requested_day
 
 
 class ChatRetrievalTest(unittest.TestCase):
+    def test_previous_day_unfinished_tasks_are_read_from_task_table(self):
+        older = {"title": "Book the train", "status": "open", "due_date": "2026-11-12"}
+        with patch.object(chat, "get_chat_history", return_value=[]), \
+             patch.object(chat, "save_chat_message", side_effect=[{"id": "u"}, {"id": "a"}]), \
+             patch.object(chat, "today_local_date", return_value="2026-11-11"), \
+             patch.object(chat, "today_bounds_utc", return_value=("2026-11-10T18:30:00+00:00", "end")), \
+             patch.object(chat, "find_recordings") as find, \
+             patch.object(chat, "get_tasks", return_value=[older]) as get, \
+             patch.object(insights, "_call_llm") as llm:
+            response = asyncio.run(chat.chat({
+                "user_id": "user-1", "message": "Do I have any tasks from previous days left to do?",
+            }))
+        self.assertIn("Book the train", response["reply"])
+        self.assertIn("2026-11-12", response["reply"])
+        self.assertEqual(get.call_args.kwargs["status"], "open")
+        self.assertEqual(get.call_args.kwargs["created_before"], "2026-11-10T18:30:00+00:00")
+        find.assert_not_called()
+        llm.assert_not_called()
+
+    def test_previous_day_task_answer_reports_empty_task_list(self):
+        context = {"prior_open_tasks": True, "tasks": [], "transcripts": []}
+        with patch.object(insights, "_call_llm") as llm:
+            answer = insights.answer_question("Any older unfinished tasks?", context)
+        self.assertIn("no unfinished tasks", answer)
+        llm.assert_not_called()
+
+    def test_completed_yesterday_is_not_treated_as_unfinished_task_query(self):
+        self.assertFalse(insights.asks_prior_open_tasks("What tasks did I finish yesterday?"))
+
     def test_first_chat_message_indexes_thread_without_renaming_on_follow_up(self):
         db = MagicMock()
         db.table.return_value.insert.return_value.execute.return_value.data = [{

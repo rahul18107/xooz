@@ -12,6 +12,25 @@ STORAGE_BUCKET = "recordings"
 ALLOWED_EXTENSIONS = (".wav", ".mp3", ".m4a", ".webm", ".ogg", ".mp4")
 
 
+def _existing_upload(user_id: str, recording_id: str | None):
+    if not recording_id:
+        return None
+    result = (supabase.table("transcripts").select("*")
+              .eq("user_id", user_id).eq("client_recording_id", recording_id)
+              .eq("status", "completed").limit(1).execute())
+    return result.data[0] if result.data else None
+
+
+def _upload_response(transcript: dict):
+    return {
+        "success": True,
+        "transcript_id": transcript["id"],
+        "text": transcript["text"],
+        "recorded_at": transcript["recorded_at"],
+        "transcript": transcript,
+    }
+
+
 def _store_audio(user_id: str, transcript_id: str, contents: bytes, content_type: str | None) -> str | None:
     """Upload the recording to Supabase Storage and return its public URL (None on failure)."""
     try:
@@ -66,10 +85,16 @@ async def upload_audio(
     file: UploadFile = File(...),
     user_id: str = Form(...),
     duration_seconds: float | None = Form(None),
+    client_recording_id: str | None = Form(None),
 ):
     # validate file type
     if not file.filename or not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
         raise HTTPException(status_code=400, detail="Unsupported audio format")
+    if client_recording_id and len(client_recording_id) > 100:
+        raise HTTPException(status_code=400, detail="Invalid recording ID")
+    existing = _existing_upload(user_id, client_recording_id)
+    if existing:
+        return _upload_response(existing)
 
     # save uploaded file to a temp location
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp:
@@ -92,7 +117,8 @@ async def upload_audio(
             text=result["text"],
             speaker_labels=result["speaker_labels"],
             status="completed",
-            extra={"duration_seconds": max(0, duration_seconds or 0)},
+            extra={"duration_seconds": max(0, duration_seconds or 0),
+                   **({"client_recording_id": client_recording_id} if client_recording_id else {})},
         )
 
         metadata = {
@@ -115,28 +141,33 @@ async def upload_audio(
                 print(f"audio URL update failed: {e}")
                 audio_url = None
 
+        if audio_url and result.get("speaker_labels"):
+            from src.services.speaker_voice import auto_identify_in_background
+            background_tasks.add_task(auto_identify_in_background, transcript["id"], user_id)
+
         # extract tasks and account for usage in the background
         background_tasks.add_task(_post_process, user_id, transcript["id"], result["text"])
 
         transcript = {**transcript, "audio_url": audio_url}
-        return {
-            "success": True,
-            # top-level fields kept for backward compatibility with the app
-            "transcript_id": transcript["id"],
-            "text": result["text"],
-            "recorded_at": transcript["recorded_at"],
-            "transcript": transcript,
-        }
+        return _upload_response(transcript)
 
     except HTTPException:
         raise
     except Exception as e:
-        # best effort: leave a failed row so "Needs Attention" can show it
+        # Another request may have completed with this ID after our initial check.
         try:
-            save_transcript(user_id=user_id, text="", speaker_labels=[], status="failed",
-                            extra={"error_message": str(e)[:500]})
+            existing = _existing_upload(user_id, client_recording_id)
+            if existing:
+                return _upload_response(existing)
         except Exception:
             pass
+        # best effort: leave a failed row so "Needs Attention" can show it
+        if not client_recording_id:
+            try:
+                save_transcript(user_id=user_id, text="", speaker_labels=[], status="failed",
+                                extra={"error_message": str(e)[:500]})
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:

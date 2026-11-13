@@ -25,6 +25,7 @@ class _RecapScreenState extends State<RecapScreen> {
   Recap? _recap;
   bool _loading = true;
   bool _sourcesExpanded = false;
+  bool _actionItemsExpanded = false;
   String? _error;
 
   @override
@@ -321,18 +322,42 @@ class _RecapScreenState extends State<RecapScreen> {
 
   Widget _buildFactSection(String title, List<RecapFact> facts) {
     if (facts.isEmpty) return const SizedBox.shrink();
+    final isActionItems = title == 'Action items';
     final sources = {for (final entry in _recap!.sourceRecordings) entry.id: entry};
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(
-            fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w700,
-            color: AppColors.ink,
-          )),
-          const SizedBox(height: 6),
-          for (final fact in facts)
+          if (isActionItems)
+            TextButton(
+              onPressed: () => setState(() => _actionItemsExpanded = !_actionItemsExpanded),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.ink,
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 40),
+                alignment: Alignment.centerLeft,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('$title (${facts.length})', style: const TextStyle(
+                    fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w700,
+                  )),
+                  const SizedBox(width: 4),
+                  Icon(_actionItemsExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded, size: 20),
+                ],
+              ),
+            )
+          else
+            Text(title, style: const TextStyle(
+              fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            )),
+          if (!isActionItems || _actionItemsExpanded) const SizedBox(height: 6),
+          if (!isActionItems || _actionItemsExpanded) for (final fact in facts)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: InkWell(

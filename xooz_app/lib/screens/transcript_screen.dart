@@ -1,4 +1,6 @@
+import 'dart:async';
 import '../theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -29,6 +31,10 @@ class _TranscriptScreenState extends State<TranscriptScreen>
   bool _savingSpeakerName = false;
   int _summaryVersion = 0;
   String? _error;
+  Timer? _speakerRefreshTimer;
+  int _speakerRefreshAttempts = 0;
+  bool _speakerRefreshInFlight = false;
+  final Map<String, String> _possibleSpeakers = {};
 
   final GlobalKey _menuButtonKey = GlobalKey();
 
@@ -38,20 +44,95 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     transcript = widget.transcript;
     _tabController = TabController(length: 2, vsync: this);
     _loadLatestTranscript();
+    _startSpeakerRefresh();
+    _loadPossibleSpeakers();
     // summary loads by default — no button needed
     if (!_hasSummary) _generateSummary();
   }
 
   @override
   void dispose() {
+    _speakerRefreshTimer?.cancel();
     _playerVisible.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
-  String get _summaryText => transcript.summary ?? '';
+  String get _summaryText {
+    var summary = transcript.summary ?? '';
+    for (final entry in transcript.speakerNames.entries) {
+      final name = entry.value.trim();
+      if (name.isEmpty) continue;
+      final label = RegExp.escape(entry.key);
+      final pattern = RegExp(
+        r'\bSpeaker\s+' + label + r'\b(?:[ \t]*[\[(][^\])\r\n]{1,80}[\])])?',
+        caseSensitive: false,
+      );
+      summary = summary.replaceAllMapped(pattern, (_) => name);
+    }
+    return summary;
+  }
 
   bool get _hasSummary => _summaryText.trim().isNotEmpty;
+
+  bool get _hasUnnamedSpeakers => transcript.speakerLabels.any(
+    (turn) => !transcript.speakerNames.containsKey('${turn['speaker']}'),
+  );
+
+  Future<void> _loadPossibleSpeakers() async {
+    if (transcript.audioUrl == null) return;
+    final labels = transcript.speakerLabels
+        .map((turn) => '${turn['speaker']}')
+        .where((label) => !transcript.speakerNames.containsKey(label))
+        .toSet();
+    for (final label in labels) {
+      try {
+        final suggestion = await ApiService.getSpeakerSuggestion(
+          transcript.id, label, transcript.userId,
+        ).timeout(const Duration(seconds: 12));
+        if (mounted && suggestion?.tier == 'possible' &&
+            !transcript.speakerNames.containsKey(label)) {
+          setState(() => _possibleSpeakers[label] = suggestion!.name);
+        }
+      } catch (_) {
+        // A missing voice match never blocks manual naming.
+      }
+    }
+  }
+
+  void _startSpeakerRefresh() {
+    if (transcript.audioUrl == null || !_hasUnnamedSpeakers ||
+        DateTime.now().difference(transcript.recordedAt).abs() > const Duration(minutes: 5)) {
+      return;
+    }
+    _speakerRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) => _refreshSpeakers());
+  }
+
+  Future<void> _refreshSpeakers() async {
+    if (_speakerRefreshInFlight || _savingSpeakerName) return;
+    if (++_speakerRefreshAttempts > 10 || !_hasUnnamedSpeakers) {
+      _speakerRefreshTimer?.cancel();
+      return;
+    }
+    _speakerRefreshInFlight = true;
+    try {
+      final latest = await ApiService.getTranscript(transcript.id)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted || _savingSpeakerName) return;
+      if (!mapEquals(latest.speakerNames, transcript.speakerNames)) {
+        setState(() {
+          transcript = latest.copyWith(clearSummary: true);
+          _summaryVersion++;
+        });
+        if (!_generating) _generateSummary(force: true);
+      }
+      if (!_hasUnnamedSpeakers) _speakerRefreshTimer?.cancel();
+    } catch (_) {
+      // Identification is optional; the existing naming dialog remains available.
+    } finally {
+      _speakerRefreshInFlight = false;
+    }
+  }
 
   Future<void> _loadLatestTranscript() async {
     final version = _summaryVersion;
@@ -59,13 +140,14 @@ class _TranscriptScreenState extends State<TranscriptScreen>
       final latest = await ApiService.getTranscript(transcript.id);
       if (mounted && version == _summaryVersion) {
         setState(() => transcript = latest);
+        if (latest.audioUrl != null) _loadPossibleSpeakers();
       }
     } catch (_) {
       // Keep the transcript passed by the previous screen when offline.
     }
   }
 
-  Future<void> _generateSummary() async {
+  Future<void> _generateSummary({bool force = false}) async {
     if (_generating || _savingSpeakerName) return;
     final version = _summaryVersion;
     setState(() {
@@ -73,11 +155,11 @@ class _TranscriptScreenState extends State<TranscriptScreen>
       _error = null;
     });
     try {
-      final result = await ApiService.generateSummary(transcript.id);
+      final result = await ApiService.generateSummary(transcript.id, force: force);
       if (!mounted) return;
       if (version != _summaryVersion) {
         setState(() => _generating = false);
-        if (!_hasSummary) _generateSummary();
+        if (!_hasSummary) _generateSummary(force: true);
         return;
       }
       setState(() {
@@ -88,7 +170,7 @@ class _TranscriptScreenState extends State<TranscriptScreen>
       if (!mounted) return;
       if (version != _summaryVersion) {
         setState(() => _generating = false);
-        if (!_hasSummary) _generateSummary();
+        if (!_hasSummary) _generateSummary(force: true);
         return;
       }
       setState(() {
@@ -118,9 +200,16 @@ class _TranscriptScreenState extends State<TranscriptScreen>
       builder: (_) => _SpeakerNameDialog(
         label: label,
         initialName: transcript.speakerNames[label] ?? '',
+        transcriptId: transcript.id,
+        userId: transcript.userId,
       ),
     );
-    if (!mounted || _savingSpeakerName || name == null || name == (transcript.speakerNames[label] ?? '')) return;
+    if (name == null) return;
+    await _saveSpeakerName(label, name);
+  }
+
+  Future<void> _saveSpeakerName(String label, String name) async {
+    if (!mounted || _savingSpeakerName || name == (transcript.speakerNames[label] ?? '')) return;
     final previous = transcript;
     final names = Map<String, String>.from(transcript.speakerNames);
     if (name.isEmpty) {
@@ -141,6 +230,7 @@ class _TranscriptScreenState extends State<TranscriptScreen>
       }
       setState(() {
         transcript = updated;
+        _possibleSpeakers.remove(label);
         _savingSpeakerName = false;
       });
       _generateSummary();
@@ -823,6 +913,9 @@ class _TranscriptScreenState extends State<TranscriptScreen>
     return Column(
       children: transcript.speakerLabels.map((utterance) {
         final isA = utterance['speaker'] == 'A';
+        final label = '${utterance['speaker']}';
+        final possibleName = transcript.speakerNames.containsKey(label)
+            ? null : _possibleSpeakers[label];
         return Align(
           alignment: isA ? Alignment.centerLeft : Alignment.centerRight,
           child: Container(
@@ -837,14 +930,14 @@ class _TranscriptScreenState extends State<TranscriptScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 InkWell(
-                  onTap: () => _editSpeakerName('${utterance['speaker']}'),
+                  onTap: () => _editSpeakerName(label),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Flexible(child: Text(
-                          transcript.speakerDisplayName('${utterance['speaker']}'),
+                          transcript.speakerDisplayName(label),
                           style: const TextStyle(
                             fontFamily: 'Inter',
                             fontSize: 11,
@@ -858,6 +951,17 @@ class _TranscriptScreenState extends State<TranscriptScreen>
                     ),
                   ),
                 ),
+                if (possibleName != null)
+                  TextButton.icon(
+                    onPressed: _savingSpeakerName ? null : () => _saveSpeakerName(label, possibleName),
+                    icon: const Icon(Icons.check_circle_outline, size: 16),
+                    label: Text('Possibly $possibleName?'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      padding: EdgeInsets.zero,
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
                 const SizedBox(height: 6),
                 Text(
                   utterance['text'] ?? '',
@@ -880,8 +984,10 @@ class _TranscriptScreenState extends State<TranscriptScreen>
 class _SpeakerNameDialog extends StatefulWidget {
   final String label;
   final String initialName;
+  final String transcriptId;
+  final String userId;
 
-  const _SpeakerNameDialog({required this.label, required this.initialName});
+  const _SpeakerNameDialog({required this.label, required this.initialName, required this.transcriptId, required this.userId});
 
   @override
   State<_SpeakerNameDialog> createState() => _SpeakerNameDialogState();
@@ -889,11 +995,41 @@ class _SpeakerNameDialog extends StatefulWidget {
 
 class _SpeakerNameDialogState extends State<_SpeakerNameDialog> {
   late final TextEditingController _controller;
+  List<String> _savedNames = [];
+  ({String name, String tier})? _suggestion;
+  bool _checkingSuggestion = false;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName);
+    _checkingSuggestion = widget.initialName.isEmpty;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _loadSavedNames();
+      if (_checkingSuggestion) _loadSuggestion();
+    });
+  }
+
+  Future<void> _loadSavedNames() async {
+    try {
+      final names = await ApiService.getSpeakerNames(widget.userId)
+          .timeout(const Duration(seconds: 8));
+      if (mounted) setState(() => _savedNames = names);
+    } catch (_) {
+      // The name field remains usable without the directory.
+    }
+  }
+
+  Future<void> _loadSuggestion() async {
+    try {
+      final name = await ApiService.getSpeakerSuggestion(widget.transcriptId, widget.label, widget.userId);
+      if (mounted) setState(() => _suggestion = name);
+    } catch (_) {
+      // Manual naming remains available if matching is unavailable.
+    } finally {
+      if (mounted) setState(() => _checkingSuggestion = false);
+    }
   }
 
   @override
@@ -904,24 +1040,61 @@ class _SpeakerNameDialogState extends State<_SpeakerNameDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final otherNames = _savedNames.where((name) => name != _suggestion?.name).toList();
     return AlertDialog(
       backgroundColor: AppColors.surface,
+      scrollable: true,
       title: Text(
         'Name Speaker ${widget.label}',
         style: const TextStyle(fontFamily: 'Inter', color: AppColors.ink),
       ),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLength: 80,
-        textCapitalization: TextCapitalization.words,
-        style: const TextStyle(fontFamily: 'Inter', fontSize: 15, color: AppColors.ink),
-        decoration: const InputDecoration(
-          hintText: 'Speaker name',
-          hintStyle: TextStyle(color: AppColors.muted),
-          counterStyle: TextStyle(color: AppColors.muted),
+      content: SizedBox(
+        width: 280,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              maxLength: 80,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(fontFamily: 'Inter', fontSize: 15, color: AppColors.ink),
+              decoration: const InputDecoration(
+                hintText: 'Speaker name',
+                hintStyle: TextStyle(color: AppColors.muted),
+                counterStyle: TextStyle(color: AppColors.muted),
+              ),
+              onSubmitted: (_) => Navigator.pop(context, _controller.text.trim()),
+            ),
+            if (_checkingSuggestion) ...[
+              const SizedBox(height: 8),
+              const LinearProgressIndicator(color: AppColors.accent),
+            ],
+            if (_suggestion != null) ...[
+              const SizedBox(height: 12),
+              const Text('Possible match', style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppColors.muted)),
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person_outline, color: AppColors.accent),
+                title: Text('Possibly ${_suggestion!.name}?', style: const TextStyle(fontFamily: 'Inter', color: AppColors.ink)),
+                onTap: () => Navigator.pop(context, _suggestion!.name),
+              ),
+            ],
+            if (otherNames.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('Saved speakers', style: TextStyle(fontFamily: 'Inter', fontSize: 13, color: AppColors.muted)),
+              const SizedBox(height: 6),
+              for (final name in otherNames)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(name, style: const TextStyle(fontFamily: 'Inter', color: AppColors.ink)),
+                  onTap: () => Navigator.pop(context, name),
+                ),
+            ],
+          ],
         ),
-        onSubmitted: (_) => Navigator.pop(context, _controller.text.trim()),
       ),
       actions: [
         TextButton(

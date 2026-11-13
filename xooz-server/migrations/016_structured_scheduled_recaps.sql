@@ -34,7 +34,7 @@ begin
       and scheduled_recap_claims.claimed_at < now() - interval '30 minutes'
   returning claim_token into token;
   return token;
-end;
+end;  
 $$;
 
 revoke all on function claim_scheduled_recap(text, date) from public;
